@@ -32,79 +32,76 @@ const fetchLyrics = async (filename) => {
   } catch { return null; }
 };
 const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+const videoExts = ["mp4","mkv","avi","mov","webm"];
 
-/* ─── Particle Visualizer ─── */
+/* ─── Icons ─── */
+const IconPrev = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+    <rect x="3" y="3" width="2.5" height="14" rx="1.2"/>
+    <path d="M16.5 4.2L7.5 10l9 5.8V4.2z"/>
+  </svg>
+);
+const IconNext = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+    <rect x="14.5" y="3" width="2.5" height="14" rx="1.2"/>
+    <path d="M3.5 4.2L12.5 10l-9 5.8V4.2z"/>
+  </svg>
+);
+const IconPlay = ({ bg }) => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill={bg}>
+    <path d="M5.5 3.8L17 10 5.5 16.2V3.8z"/>
+  </svg>
+);
+const IconPause = ({ bg }) => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill={bg}>
+    <rect x="4" y="3" width="4" height="14" rx="1.5"/>
+    <rect x="12" y="3" width="4" height="14" rx="1.5"/>
+  </svg>
+);
+
+/* ─── Visualizer ─── */
 function Viz({ playing, analyserRef }) {
   const cvRef = useRef();
   const rafRef = useRef();
-
   useEffect(() => {
     const cv = cvRef.current;
     const ctx = cv.getContext("2d");
     const W = cv.width, H = cv.height;
     const particles = [];
-
     const spawnParticle = (x, strength) => {
-      particles.push({
-        x, y: H,
-        vx: (Math.random() - 0.5) * 1.5,
-        vy: -(1 + strength * 4),
-        size: 1 + strength * 3,
-        alpha: 0.6 + strength * 0.4,
-        life: 1,
-      });
+      particles.push({ x, y: H, vx: (Math.random() - 0.5) * 1.5, vy: -(1 + strength * 4), size: 1 + strength * 2.5, alpha: 0.5 + strength * 0.4, life: 1 });
     };
-
     const draw = () => {
       rafRef.current = requestAnimationFrame(draw);
       ctx.clearRect(0, 0, W, H);
-
       const anl = analyserRef?.current;
-      let freqData = null;
-      if (anl && playing) {
-        freqData = new Uint8Array(anl.frequencyBinCount);
-        anl.getByteFrequencyData(freqData);
-      }
-
-      // Mirror bars from center
-      const halfW = W / 2;
-      const barCount = 48;
+      let fd = null;
+      if (anl && playing) { fd = new Uint8Array(anl.frequencyBinCount); anl.getByteFrequencyData(fd); }
+      const halfW = W / 2, barCount = 48;
       for (let i = 0; i < barCount; i++) {
-        const v = freqData ? (freqData[Math.floor(i * freqData.length / barCount / 2)] / 255) : (playing ? 0.1 + Math.random() * 0.15 : 0.03);
+        const v = fd ? (fd[Math.floor(i * fd.length / barCount / 2)] / 255) : (playing ? 0.08 + Math.random() * 0.12 : 0.03);
         const bh = v * H * 0.85;
         const bw = (halfW / barCount) - 1.5;
-        const alpha = 0.1 + v * 0.7;
-
-        // Right side
-        const xr = halfW + i * (bw + 1.5);
+        const alpha = 0.08 + v * 0.7;
         ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        const xr = halfW + i * (bw + 1.5);
         ctx.beginPath(); ctx.roundRect(xr, H - bh, bw, bh, 2); ctx.fill();
-
-        // Left side (mirror)
         const xl = halfW - (i + 1) * (bw + 1.5);
         ctx.beginPath(); ctx.roundRect(xl, H - bh, bw, bh, 2); ctx.fill();
-
-        // Spawn particles on bass
-        if (playing && i < 4 && v > 0.6 && Math.random() < 0.3) {
+        if (playing && i < 4 && v > 0.6 && Math.random() < 0.25)
           spawnParticle(halfW + (Math.random() - 0.5) * halfW * 0.5, v);
-        }
       }
-
-      // Update & draw particles
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.life -= 0.018;
+        p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.life -= 0.02;
         if (p.life <= 0) { particles.splice(i, 1); continue; }
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${p.alpha * p.life})`;
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${p.alpha * p.life})`; ctx.fill();
       }
     };
     draw();
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, analyserRef]);
-
   return <canvas ref={cvRef} width={900} height={80} style={{ width: "100%", height: 80, display: "block" }} />;
 }
 
@@ -113,44 +110,18 @@ function Lyrics({ lines, t, loading }) {
   const wrapRef = useRef();
   const activeRef = useRef();
   const idx = lines.reduce((a, l, i) => t >= l.time ? i : a, -1);
-
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [idx]);
-
+  useEffect(() => { activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [idx]);
   if (loading) return (
     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.85rem", color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", animation: "pulse 1.5s ease-in-out infinite" }}>
-        Buscando letra...
-      </p>
+      <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.85rem", color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", animation: "pulse 1.5s ease-in-out infinite" }}>Buscando letra...</p>
     </div>
   );
-
   return (
-    <div ref={wrapRef} style={{
-      height: "100%", overflowY: "auto", padding: "28px 24px",
-      scrollbarWidth: "none",
-      maskImage: "linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)",
-      WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)",
-    }}>
+    <div ref={wrapRef} style={{ height: "100%", overflowY: "auto", padding: "28px 24px", scrollbarWidth: "none", maskImage: "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)" }}>
       {lines.map((l, i) => {
-        const on = i === idx;
-        const dist = Math.abs(i - idx);
-        const blur = on ? 0 : Math.min(dist * 1.2, 4);
-        const opacity = on ? 1 : Math.max(0.12, 0.55 - dist * 0.12);
+        const on = i === idx, dist = Math.abs(i - idx);
         return (
-          <p key={i} ref={on ? activeRef : null} style={{
-            margin: "0 0 24px", textAlign: "center",
-            fontFamily: "'Syne', sans-serif",
-            fontSize: on ? "clamp(1.15rem,3vw,1.45rem)" : "clamp(0.85rem,2.5vw,1.05rem)",
-            fontWeight: on ? 700 : 400,
-            color: "#fff",
-            opacity,
-            filter: `blur(${blur}px)`,
-            transition: "all 0.45s cubic-bezier(.4,0,.2,1)",
-            transform: on ? "scale(1.05)" : "scale(1)",
-            lineHeight: 1.45,
-          }}>{l.text}</p>
+          <p key={i} ref={on ? activeRef : null} style={{ margin: "0 0 24px", textAlign: "center", fontFamily: "'Syne',sans-serif", fontSize: on ? "clamp(1.1rem,3vw,1.4rem)" : "clamp(0.85rem,2.5vw,1rem)", fontWeight: on ? 700 : 400, color: "#fff", opacity: on ? 1 : Math.max(0.12, 0.5 - dist * 0.1), filter: `blur(${on ? 0 : Math.min(dist * 1.2, 4)}px)`, transition: "all 0.4s cubic-bezier(.4,0,.2,1)", transform: on ? "scale(1.04)" : "scale(1)", lineHeight: 1.45 }}>{l.text}</p>
         );
       })}
       {lines.length === 0 && (
@@ -164,37 +135,32 @@ function Lyrics({ lines, t, loading }) {
   );
 }
 
-/* ─── Play/Pause SVG Button ─── */
-function PlayButton({ playing, onClick, bg }) {
+/* ─── Welcome Modal ─── */
+function WelcomeModal({ onOpenFolder, onSkip }) {
   return (
-    <button onClick={onClick} style={{
-      width: 52, height: 52, borderRadius: "50%", background: "#fff", border: "none",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      cursor: "pointer", flexShrink: 0, transition: "transform 0.12s, opacity 0.15s",
-    }}
-      onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
-      onMouseLeave={e => e.currentTarget.style.opacity = "1"}
-      onMouseDown={e => e.currentTarget.style.transform = "scale(0.92)"}
-      onMouseUp={e => e.currentTarget.style.transform = "scale(1)"}
-    >
-      <svg width="22" height="22" viewBox="0 0 22 22" fill={bg}>
-        {playing ? (
-          <>
-            <rect x="4" y="3" width="4.5" height="16" rx="1.5"
-              style={{ transition: "all 0.25s cubic-bezier(.4,0,.2,1)" }} />
-            <rect x="13.5" y="3" width="4.5" height="16" rx="1.5"
-              style={{ transition: "all 0.25s cubic-bezier(.4,0,.2,1)" }} />
-          </>
-        ) : (
-          <path d="M6 3.5L19 11L6 18.5V3.5Z" rx="1"
-            style={{ transition: "all 0.25s cubic-bezier(.4,0,.2,1)" }} />
-        )}
-      </svg>
-    </button>
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)" }}>
+      <div style={{ background: "rgba(20,20,30,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "40px 44px", textAlign: "center", maxWidth: 380, boxShadow: "0 40px 80px rgba(0,0,0,0.5)" }}>
+        <div style={{ fontSize: "2.5rem", marginBottom: 16 }}>♫</div>
+        <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "1.3rem", color: "#fff", marginBottom: 10, letterSpacing: "0.02em" }}>Bienvenido a Wave</h2>
+        <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.82rem", color: "rgba(255,255,255,0.45)", marginBottom: 28, lineHeight: 1.6 }}>
+          ¿Quieres cargar una carpeta con tu música para empezar?
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button onClick={onOpenFolder} style={{ background: "#fff", border: "none", borderRadius: 10, padding: "11px 24px", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s" }}
+            onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+          >Abrir carpeta</button>
+          <button onClick={onSkip} style={{ background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "11px 24px", fontFamily: "'Syne',sans-serif", fontWeight: 600, fontSize: "0.8rem", color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", cursor: "pointer", transition: "border-color 0.2s,color 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.4)"; e.currentTarget.style.color = "#fff"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
+          >Más tarde</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
-/* ─── Main App ─── */
+/* ─── App ─── */
 export default function App() {
   const [playlist, setPlaylist] = useState([]);
   const [idx, setIdx] = useState(0);
@@ -207,6 +173,7 @@ export default function App() {
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [progressHover, setProgressHover] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(isElectron); // only show in desktop app
 
   const audioRef = useRef();
   const videoRef = useRef();
@@ -217,6 +184,7 @@ export default function App() {
   const lrcIn = useRef();
   const playingRef = useRef(false);
   const footerRef = useRef();
+  const loadedIdxRef = useRef(-1);
 
   const track = playlist[idx] || null;
   const isVideo = track?.type === "video";
@@ -236,30 +204,35 @@ export default function App() {
     srcRef.current = src; analyserRef.current = anl;
   }, []);
 
+  // Load track whenever idx or playlist changes (fixes first-song bug)
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !track) return;
+    if (loadedIdxRef.current === idx) return; // already loaded
+    loadedIdxRef.current = idx;
     el.src = track.url; el.load();
     setCt(0); setDur(0);
     if (playingRef.current) el.play().catch(() => {});
     setLyrics([]); setLyricsLoading(true);
     fetchLyrics(track.name).then(lines => { setLyrics(lines || []); setLyricsLoading(false); });
-  }, [idx]);
+  }, [idx, playlist]);
 
+  // Video src sync — keep video in DOM always, just show/hide
   useEffect(() => {
     const vel = videoRef.current;
     if (!vel || !track || !isVideo) return;
     vel.src = track.url; vel.load();
     if (playingRef.current) vel.play().catch(() => {});
-  }, [idx, isVideo]);
+  }, [idx, playlist, isVideo]);
 
+  // Sync video time with audio
   useEffect(() => {
     const audio = audioRef.current, video = videoRef.current;
-    if (!audio || !video || !isVideo) return;
-    const sync = () => { if (Math.abs(video.currentTime - audio.currentTime) > 0.5) video.currentTime = audio.currentTime; };
+    if (!audio || !video) return;
+    const sync = () => { if (isVideo && Math.abs(video.currentTime - audio.currentTime) > 0.5) video.currentTime = audio.currentTime; };
     audio.addEventListener("timeupdate", sync);
     return () => audio.removeEventListener("timeupdate", sync);
-  }, [isVideo, idx]);
+  }, [isVideo]);
 
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol]);
 
@@ -267,29 +240,49 @@ export default function App() {
   useEffect(() => {
     const el = footerRef.current;
     if (!el) return;
-    const onWheel = (e) => {
-      e.preventDefault();
-      setVol(v => Math.max(0, Math.min(1, v - e.deltaY * 0.001)));
-    };
+    const onWheel = (e) => { e.preventDefault(); setVol(v => Math.max(0, Math.min(1, v - e.deltaY * 0.001))); };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  const pathsToTracks = (paths) => paths.map(p => ({
+    name: p.split(/[\\/]/).pop().replace(/\.[^/.]+$/, ""),
+    url: `file:///${p.replace(/\\/g, "/")}`,
+    type: videoExts.includes(p.split(".").pop().toLowerCase()) ? "video" : "audio"
+  }));
 
   const addFromInput = (files) => {
     const tracks = [...files].filter(f => f.type.startsWith("audio/") || f.type.startsWith("video/"))
       .map(f => ({ name: f.name.replace(/\.[^/.]+$/, ""), url: URL.createObjectURL(f), type: f.type.startsWith("video/") ? "video" : "audio" }));
     if (!tracks.length) return;
-    setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
+    setPlaylist(p => { if (p.length === 0) { loadedIdxRef.current = -1; setIdx(0); } return [...p, ...tracks]; });
   };
+
   const addFromPaths = (paths) => {
-    const ve = ["mp4","mkv","avi","mov","webm"];
-    const tracks = paths.map(p => ({ name: p.split(/[\\/]/).pop().replace(/\.[^/.]+$/, ""), url: `file:///${p.replace(/\\/g, "/")}`, type: ve.includes(p.split(".").pop().toLowerCase()) ? "video" : "audio" }));
-    setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
+    const tracks = pathsToTracks(paths);
+    if (!tracks.length) return;
+    setPlaylist(p => { if (p.length === 0) { loadedIdxRef.current = -1; setIdx(0); } return [...p, ...tracks]; });
   };
+
   const openFiles = async () => {
     if (isElectron) { const paths = await window.electronAPI.openFiles(); if (paths?.length) addFromPaths(paths); }
     else fileIn.current?.click();
   };
+
+  const openFolder = async () => {
+    if (isElectron) {
+      const paths = await window.electronAPI.openFolder();
+      if (paths?.length) {
+        loadedIdxRef.current = -1;
+        setIdx(0);
+        setPlaylist(pathsToTracks(paths));
+      }
+    } else {
+      fileIn.current?.click();
+    }
+    setShowWelcome(false);
+  };
+
   const loadLRC = (file) => {
     const fr = new FileReader();
     fr.onload = e => { setLyrics(parseLRC(e.target.result)); setLyricsLoading(false); };
@@ -297,15 +290,24 @@ export default function App() {
   };
 
   const go = useCallback((dir) => {
-    setIdx(prev => { const n = prev + dir; if (n >= 0 && n < playlist.length) { setPlaying(true); return n; } return prev; });
+    setIdx(prev => {
+      const n = prev + dir;
+      if (n >= 0 && n < playlist.length) { loadedIdxRef.current = -1; setPlaying(true); return n; }
+      return prev;
+    });
   }, [playlist.length]);
 
   const togglePlay = async () => {
     const el = audioRef.current;
     if (!el || !track) return;
     if (actxRef.current?.state === "suspended") actxRef.current.resume();
-    if (playing) { el.pause(); videoRef.current?.pause(); setPlaying(false); }
-    else { setupAudio(el); await el.play(); if (isVideo) videoRef.current?.play().catch(() => {}); setPlaying(true); }
+    if (playing) {
+      el.pause(); videoRef.current?.pause(); setPlaying(false);
+    } else {
+      setupAudio(el); await el.play();
+      if (isVideo) videoRef.current?.play().catch(() => {});
+      setPlaying(true);
+    }
   };
 
   const seek = async (e) => {
@@ -322,14 +324,7 @@ export default function App() {
 
   const pct = dur ? (ct / dur) * 100 : 0;
   const bg = ["#0a0a0f","#0a0f0a","#0f0a0a","#0a0d12","#0e0a10","#0f0e08"][idx % 6];
-  const auroraColors = [
-    ["#3b1f6e","#1a3a5c","#1a4a3a"],
-    ["#1a4a3a","#2d1f5e","#1a2a4a"],
-    ["#4a1a2a","#1a3a5c","#2d1f5e"],
-    ["#1a2a4a","#1a4a2a","#3b1f6e"],
-    ["#2d1a4e","#1a4a3a","#4a2a1a"],
-    ["#1a3a1a","#3b2a1a","#1a2a5c"],
-  ][idx % 6];
+  const auroraColors = [["#3b1f6e","#1a3a5c","#1a4a3a"],["#1a4a3a","#2d1f5e","#1a2a4a"],["#4a1a2a","#1a3a5c","#2d1f5e"],["#1a2a4a","#1a4a2a","#3b1f6e"],["#2d1a4e","#1a4a3a","#4a2a1a"],["#1a3a1a","#3b2a1a","#1a2a5c"]][idx % 6];
 
   return (
     <div style={{ height: "100dvh", background: bg, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
@@ -343,85 +338,80 @@ export default function App() {
         @keyframes auroraA { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(60px,-40px) scale(1.1)} 66%{transform:translate(-30px,50px) scale(0.95)} }
         @keyframes auroraB { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(-70px,30px) scale(1.05)} 66%{transform:translate(50px,-60px) scale(1.1)} }
         @keyframes auroraC { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(40px,60px) scale(0.95)} 66%{transform:translate(-60px,-30px) scale(1.1)} }
-        @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
-        @keyframes slideIn { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
-        .sidebar-enter { animation: slideIn 0.3s ease forwards; }
-        .progress-bar:hover .progress-wave { animation: wave 1s ease-in-out infinite; }
-        @keyframes wave { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.15)} }
+        @keyframes pulse { 0%,100%{opacity:0.35} 50%{opacity:1} }
         .shell { display:flex; flex:1; overflow:hidden; }
-        .sidebar { width:248px; min-width:248px; display:flex; flex-direction:column; border-right:1px solid rgba(255,255,255,0.07); overflow-y:auto; transition: width 0.3s ease, min-width 0.3s ease, opacity 0.2s; }
-        .sidebar.closed { width:0; min-width:0; opacity:0; pointer-events:none; }
+        .sidebar { width:248px; min-width:248px; display:flex; flex-direction:column; border-right:1px solid rgba(255,255,255,0.07); overflow-y:auto; transition:width 0.3s ease,min-width 0.3s ease,opacity 0.25s; }
+        .sidebar.closed { width:0!important; min-width:0!important; opacity:0; pointer-events:none; overflow:hidden; }
         .main { flex:1; display:flex; flex-direction:column; min-width:0; }
         .btn-ghost { background:none; border:1px solid rgba(255,255,255,0.13); color:rgba(255,255,255,0.5); border-radius:6px; padding:6px 12px; font-size:0.68rem; font-weight:600; letter-spacing:0.1em; transition:border-color 0.2s,color 0.2s; }
         .btn-ghost:hover { border-color:rgba(255,255,255,0.45); color:#fff; }
-        .pl-item { padding:9px 14px; cursor:pointer; display:flex; align-items:center; gap:10px; border-left:2px solid transparent; transition:background 0.15s,border-color 0.25s; position:relative; }
+        .pl-item { padding:9px 14px; cursor:pointer; display:flex; align-items:center; gap:10px; border-left:2px solid transparent; transition:background 0.15s,border-color 0.3s; }
         .pl-item:hover { background:rgba(255,255,255,0.03); }
         .pl-item.active { background:rgba(255,255,255,0.06); border-left-color:#fff; }
         .tab-btn { background:none; border:none; padding:11px 18px; font-size:0.68rem; font-weight:700; letter-spacing:0.15em; color:rgba(255,255,255,0.25); border-bottom:2px solid transparent; margin-bottom:-1px; transition:color 0.2s,border-color 0.2s; }
         .tab-btn.active { color:#fff; border-bottom-color:#fff; }
-        .ctrl-btn { background:none; border:none; color:rgba(255,255,255,0.38); font-size:1rem; padding:8px; border-radius:8px; transition:color 0.15s,transform 0.1s; }
+        .ctrl-btn { background:none; border:none; color:rgba(255,255,255,0.38); padding:8px; border-radius:8px; transition:color 0.15s,transform 0.1s; display:flex; align-items:center; justify-content:center; }
         .ctrl-btn:hover { color:#fff; }
-        .ctrl-btn:active { transform:scale(0.9); }
+        .ctrl-btn:active { transform:scale(0.88); }
+        .play-btn { width:52px; height:52px; border-radius:50%; background:#fff; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:transform 0.12s,opacity 0.15s; }
+        .play-btn:hover { opacity:0.85; }
+        .play-btn:active { transform:scale(0.91); }
+        .progress-track { height:4px; background:rgba(255,255,255,0.1); border-radius:99px; cursor:pointer; position:relative; transition:height 0.2s; }
+        .progress-track:hover { height:7px; }
+        .progress-track:hover .progress-dot { width:12px!important; height:12px!important; }
         @media (max-width:640px) {
           .shell { flex-direction:column; }
           .sidebar { width:100%!important; min-width:unset!important; border-right:none; border-bottom:1px solid rgba(255,255,255,0.07); max-height:34dvh; opacity:1!important; pointer-events:all!important; }
-          .sidebar.closed { max-height:0; opacity:0!important; overflow:hidden; }
+          .sidebar.closed { max-height:0!important; opacity:0!important; }
         }
       `}</style>
 
-      {/* Aurora background */}
+      {/* Aurora */}
       <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 0 }}>
         {auroraColors.map((c, i) => (
-          <div key={i} style={{
-            position: "absolute",
-            width: "55vw", height: "55vw",
-            borderRadius: "50%",
-            background: c,
-            filter: "blur(90px)",
-            opacity: 0.18,
-            top: ["10%", "50%", "30%"][i],
-            left: ["10%", "60%", "35%"][i],
-            animation: [`auroraA`, `auroraB`, `auroraC`][i] + ` ${18 + i * 7}s ease-in-out infinite`,
-          }} />
+          <div key={i} style={{ position: "absolute", width: "55vw", height: "55vw", borderRadius: "50%", background: c, filter: "blur(90px)", opacity: 0.18, top: ["10%","50%","30%"][i], left: ["10%","60%","35%"][i], animation: [`auroraA`,`auroraB`,`auroraC`][i] + ` ${18 + i * 7}s ease-in-out infinite` }} />
         ))}
       </div>
 
-      {/* Content above aurora */}
+      {/* Welcome modal */}
+      {showWelcome && <WelcomeModal onOpenFolder={openFolder} onSkip={() => setShowWelcome(false)} />}
+
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
 
-        {/* Hidden media */}
+        {/* Hidden audio — always in DOM */}
         <audio ref={audioRef}
           onTimeUpdate={() => setCt(audioRef.current?.currentTime || 0)}
           onDurationChange={() => setDur(audioRef.current?.duration || 0)}
           onEnded={() => go(1)} />
+
+        {/* Hidden video — always in DOM, visibility toggled via CSS */}
+        <video ref={videoRef} muted
+          style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none", top: 0, left: 0 }} />
+
         {!isElectron && <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden onChange={e => addFromInput(e.target.files)} />}
         <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
 
         {/* Header */}
         <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, WebkitAppRegion: "drag", backdropFilter: "blur(12px)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, WebkitAppRegion: "no-drag" }}>
-            <button onClick={() => setSidebarOpen(o => !o)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: "0.9rem", padding: "4px 6px", cursor: "pointer", borderRadius: 6, transition: "color 0.2s", lineHeight: 1 }}
+            <button onClick={() => setSidebarOpen(o => !o)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.38)", fontSize: "1rem", padding: "4px 6px", cursor: "pointer", borderRadius: 6, transition: "color 0.2s", lineHeight: 1 }}
               onMouseEnter={e => e.currentTarget.style.color = "#fff"}
-              onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.4)"}
-              title="Modo Zen"
-            >
-              {sidebarOpen ? "◧" : "▣"}
-            </button>
-            <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "0.75rem", letterSpacing: "0.22em", color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>WAVE</span>
+              onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.38)"}
+            >{sidebarOpen ? "◧" : "▣"}</button>
+            <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "0.75rem", letterSpacing: "0.22em", color: "rgba(255,255,255,0.38)", textTransform: "uppercase" }}>WAVE</span>
           </div>
           <div style={{ display: "flex", gap: 7, WebkitAppRegion: "no-drag" }}>
-            <button className="btn-ghost" onClick={openFiles}>+ MÚSICA</button>
+            {isElectron && <button className="btn-ghost" onClick={openFolder}>📁 Carpeta</button>}
+            <button className="btn-ghost" onClick={openFiles}>+ Música</button>
             <button className="btn-ghost" onClick={() => lrcIn.current?.click()}>+ .lrc</button>
           </div>
         </header>
 
         <div className="shell">
           {/* Sidebar */}
-          <aside className={`sidebar${sidebarOpen ? " sidebar-enter" : " closed"}`}>
+          <aside className={`sidebar${sidebarOpen ? "" : " closed"}`}>
             <div style={{ padding: "13px 14px 7px", flexShrink: 0 }}>
-              <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.14em" }}>
-                LISTA — {playlist.length}
-              </span>
+              <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.14em" }}>LISTA — {playlist.length}</span>
             </div>
             {playlist.length === 0 && (
               <div onClick={openFiles}
@@ -439,17 +429,15 @@ export default function App() {
             )}
             {playlist.map((t, i) => (
               <div key={i} className={`pl-item${i === idx ? " active" : ""}`}
-                onClick={() => { setIdx(i); setPlaying(true); }}>
-                <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.56rem", color: "rgba(255,255,255,0.2)", minWidth: 16 }}>
-                  {String(i + 1).padStart(2, "0")}
-                </span>
+                onClick={() => { loadedIdxRef.current = -1; setIdx(i); setPlaying(true); }}>
+                <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.56rem", color: "rgba(255,255,255,0.2)", minWidth: 16 }}>{String(i + 1).padStart(2, "0")}</span>
                 <span style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.78rem", color: i === idx ? "#fff" : "rgba(255,255,255,0.4)", fontWeight: i === idx ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {t.type === "video" ? "▷ " : ""}{t.name}
                 </span>
                 {i === idx && playing && (
                   <div style={{ marginLeft: "auto", display: "flex", gap: 2, alignItems: "flex-end", height: 14, flexShrink: 0 }}>
                     {[1,1.5,0.8].map((h, j) => (
-                      <div key={j} style={{ width: 2, background: "#fff", borderRadius: 1, height: `${h * 8}px`, opacity: 0.7, animation: `pulse ${0.6 + j * 0.2}s ease-in-out infinite` }} />
+                      <div key={j} style={{ width: 2, background: "#fff", borderRadius: 1, height: `${h * 8}px`, opacity: 0.6, animation: `pulse ${0.6 + j * 0.2}s ease-in-out infinite` }} />
                     ))}
                   </div>
                 )}
@@ -464,23 +452,24 @@ export default function App() {
                 <button key={k} className={`tab-btn${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
               ))}
             </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              {tab === "lyrics"
-                ? <Lyrics lines={lyrics} t={ct} loading={lyricsLoading} />
-                : (
-                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#000", position: "relative" }}>
-                    {isVideo
-                      ? <video ref={videoRef} muted style={{ maxWidth: "100%", maxHeight: "100%", display: "block", position: "relative", zIndex: 1 }} />
-                      : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.13)" }}>
-                          <div style={{ fontSize: 44, marginBottom: 12 }}>▷</div>
-                          <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.8rem" }}>
-                            {track ? "Solo audio" : "Carga un video"}
-                          </p>
-                        </div>
-                    }
-                  </div>
-                )
-              }
+            <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+              {/* Lyrics — always mounted */}
+              <div style={{ position: "absolute", inset: 0, display: tab === "lyrics" ? "block" : "none" }}>
+                <Lyrics lines={lyrics} t={ct} loading={lyricsLoading} />
+              </div>
+              {/* Video — always mounted, synced via hidden video ref */}
+              <div style={{ position: "absolute", inset: 0, display: tab === "video" ? "flex" : "none", alignItems: "center", justifyContent: "center", background: "#000" }}>
+                {isVideo
+                  ? <video src={track?.url} controls
+                      style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }}
+                      onTimeUpdate={e => { if (audioRef.current) audioRef.current.currentTime = e.target.currentTime; }}
+                    />
+                  : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.13)" }}>
+                      <div style={{ fontSize: 44, marginBottom: 12 }}>▷</div>
+                      <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.8rem" }}>{track ? "Solo audio" : "Carga un video"}</p>
+                    </div>
+                }
+              </div>
             </div>
           </div>
         </div>
@@ -501,36 +490,25 @@ export default function App() {
             </span>
           </div>
 
-          {/* Progress bar */}
-          <div
-            className="progress-bar"
-            onClick={seek}
-            onMouseEnter={() => setProgressHover(true)}
-            onMouseLeave={() => setProgressHover(false)}
-            style={{ height: progressHover ? 7 : 4, background: "rgba(255,255,255,0.1)", borderRadius: 99, cursor: "pointer", marginBottom: 15, position: "relative", transition: "height 0.2s" }}
-          >
-            <div className="progress-wave" style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.1s linear", position: "relative" }}>
-              <div style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: progressHover ? 12 : 0, height: progressHover ? 12 : 0, borderRadius: "50%", background: "#fff", transition: "width 0.2s, height 0.2s", boxShadow: "0 0 8px rgba(255,255,255,0.6)" }} />
+          {/* Progress */}
+          <div className="progress-track" onClick={seek} onMouseEnter={() => setProgressHover(true)} onMouseLeave={() => setProgressHover(false)} style={{ marginBottom: 15 }}>
+            <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.1s linear", position: "relative" }}>
+              <div className="progress-dot" style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: 0, height: 0, borderRadius: "50%", background: "#fff", transition: "width 0.2s,height 0.2s", boxShadow: "0 0 8px rgba(255,255,255,0.6)" }} />
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center" }}>
-            {/* Volume */}
             <div style={{ display: "flex", alignItems: "center", gap: 7, flex: 1 }}>
-              <span style={{ fontSize: "0.7rem", opacity: vol > 0 ? 0.35 : 0.15 }}>
-                {vol === 0 ? "🔇" : vol < 0.5 ? "🔉" : "🔊"}
-              </span>
-              <input type="range" min={0} max={1} step={0.01} value={vol}
-                onChange={e => setVol(+e.target.value)} style={{ maxWidth: 80 }} />
+              <span style={{ fontSize: "0.7rem", opacity: 0.35 }}>{vol === 0 ? "🔇" : vol < 0.5 ? "🔉" : "🔊"}</span>
+              <input type="range" min={0} max={1} step={0.01} value={vol} onChange={e => setVol(+e.target.value)} style={{ maxWidth: 80 }} />
             </div>
-
-            {/* Transport */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button className="ctrl-btn" onClick={() => go(-1)}>⏮</button>
-              <PlayButton playing={playing} onClick={togglePlay} bg={bg} />
-              <button className="ctrl-btn" onClick={() => go(1)}>⏭</button>
+              <button className="ctrl-btn" onClick={() => go(-1)}><IconPrev /></button>
+              <button className="play-btn" onClick={togglePlay}>
+                {playing ? <IconPause bg={bg} /> : <IconPlay bg={bg} />}
+              </button>
+              <button className="ctrl-btn" onClick={() => go(1)}><IconNext /></button>
             </div>
-
             <div style={{ flex: 1 }} />
           </div>
         </footer>
