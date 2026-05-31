@@ -38,11 +38,18 @@
       "createStartMenuShortcut": true
     },
     "files": [
-      "dist/**/*",
-      "node_modules/**/*",
-      "package.json",
-      "main.js",
-      "preload.js"
+  "dist/**/*",
+  "node_modules/**/*",
+  "package.json",
+  "main.js",
+  "preload.js"
+],
+"extraResources": [
+  {
+    "from": "dist",
+    "to": "dist"
+  }
+]
     ]
   }
 }
