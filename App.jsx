@@ -25,7 +25,6 @@ const DEMO = [
   { time: 15, text: "Disfruta tu música ♪" },
 ];
 
-// Detect if running inside Electron
 const isElectron = typeof window !== "undefined" && !!window.electronAPI;
 
 /* ─── Visualizer ─── */
@@ -149,7 +148,6 @@ export default function App() {
 
   useEffect(() => { if (mediaRef.current) mediaRef.current.volume = vol; }, [vol]);
 
-  // Add from browser file input (web / fallback)
   const addFromInput = (files) => {
     const tracks = [...files]
       .filter(f => f.type.startsWith("audio/") || f.type.startsWith("video/"))
@@ -158,7 +156,6 @@ export default function App() {
     setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
   };
 
-  // Add from Electron native dialog (file paths)
   const addFromPaths = (paths) => {
     const tracks = paths.map(p => {
       const name = p.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "");
@@ -197,10 +194,15 @@ export default function App() {
     else { await el.play(); setPlaying(true); }
   };
 
+  // SOLUCIÓN AL BUG DE ADELANTAR (SEEKING)
   const seek = (e) => {
+    if (!mediaRef.current || !dur) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const v = ((e.clientX - rect.left) / rect.width) * dur;
-    if (mediaRef.current) mediaRef.current.currentTime = v;
+    
+    // Cambiar la posición del reproductor nativo primero
+    mediaRef.current.currentTime = v;
+    // Forzar la actualización del estado inmediatamente
     setCt(v);
   };
 
@@ -234,7 +236,6 @@ export default function App() {
         }
       `}</style>
 
-      {/* Hidden inputs fallback */}
       {!isElectron && (
         <>
           <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden onChange={e => addFromInput(e.target.files)} />
@@ -245,14 +246,15 @@ export default function App() {
         <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
       )}
 
-      {/* Hidden media element */}
+      {/* EL ELEMENTO MULTIMEDIA ÚNICO (AUDIO O VIDEO) */}
       {track?.type === "video"
         ? <video ref={mediaRef}
             onTimeUpdate={() => setCt(mediaRef.current?.currentTime || 0)}
             onDurationChange={() => setDur(mediaRef.current?.duration || 0)}
             onEnded={() => go(1)}
             onCanPlay={() => setupAudio(mediaRef.current)}
-            style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
+            // Ya no lo escondemos con 1px, ahora muta según la pestaña
+            style={tab === "video" ? { maxWidth: "100%", maxHeight: "100%", display: "block", margin: "auto" } : { position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
         : <audio ref={mediaRef}
             onTimeUpdate={() => setCt(mediaRef.current?.currentTime || 0)}
             onDurationChange={() => setDur(mediaRef.current?.duration || 0)}
@@ -264,7 +266,7 @@ export default function App() {
       <header style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0,
-        WebkitAppRegion: "drag", // allows dragging window from header in Electron
+        WebkitAppRegion: "drag",
       }}>
         <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "0.78rem", letterSpacing: "0.2em", color: "rgba(255,255,255,0.45)", textTransform: "uppercase" }}>
           WAVE
@@ -324,7 +326,8 @@ export default function App() {
               : (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#000" }}>
                   {track?.type === "video"
-                    ? <video src={track.url} controls style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                    ? /* El elemento de video real se mueve aquí mediante estilos del DOM de arriba para evitar duplicarse */
+                      <div id="video-container" style={{ width: "100%", height: "100%", display: "flex" }} />
                     : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.15)" }}>
                         <div style={{ fontSize: 48, marginBottom: 12 }}>▷</div>
                         <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.8rem" }}>
@@ -338,6 +341,11 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Injectamos el video dinámicamente en su contenedor cuando se visualiza */}
+      {tab === "video" && track?.type === "video" && mediaRef.current && (
+        <PortalToId targetId="video-container" element={mediaRef.current} />
+      )}
 
       {/* Visualizer */}
       <div style={{ background: "rgba(0,0,0,0.25)", borderTop: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
@@ -355,10 +363,12 @@ export default function App() {
           </span>
         </div>
 
-        {/* Progress */}
-        <div onClick={seek} style={{ height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 99, cursor: "pointer", marginBottom: 16, position: "relative" }}>
-          <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.1s linear", position: "relative" }}>
-            <div style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: 10, height: 10, borderRadius: "50%", background: "#fff" }} />
+        {/* Progress Bar */}
+        <div onClick={seek} style={{ height: 12, display: 'flex', alignItems: 'center', cursor: "pointer", marginBottom: 12, position: "relative" }}>
+          <div style={{ height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 99, width: '100%', position: "relative" }}>
+            <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, position: "relative" }}>
+              <div style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: 10, height: 10, borderRadius: "50%", background: "#fff" }} />
+            </div>
           </div>
         </div>
 
@@ -387,4 +397,18 @@ export default function App() {
       </footer>
     </div>
   );
+}
+
+// Mini-componente de ayuda para mover el video de lugar sin desmontarlo del DOM
+function PortalToId({ targetId, element }) {
+  useEffect(() => {
+    const target = document.getElementById(targetId);
+    if (target && element) {
+      target.appendChild(element);
+      return () => {
+        document.body.appendChild(element);
+      };
+    }
+  }, [targetId, element]);
+  return null;
 }
