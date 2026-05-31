@@ -1,7 +1,7 @@
 {
   "name": "wave-player",
   "version": "1.0.0",
-  "description": "Reproductor de música y video con letra sincronizada",
+  "description": "Reproductor de música y video",
   "main": "main.js",
   "scripts": {
     "dev": "vite",
@@ -29,7 +29,7 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "public/icon.ico"
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -38,12 +38,11 @@
       "createStartMenuShortcut": true
     },
     "files": [
-  "dist/**/*",
-  "node_modules/**/*",
-  "package.json",
-  "main.js",
-  "preload.js"
-]
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "main.js",
+      "preload.js"
     ]
   }
 }
