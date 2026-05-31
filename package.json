@@ -2,7 +2,7 @@
   "name": "wave-player",
   "version": "1.0.0",
   "description": "Reproductor de música y video con letra sincronizada",
-  "main": "electron/main.js",
+  "main": "main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -38,10 +38,12 @@
       "createStartMenuShortcut": true
     },
     "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "node_modules/**/*",
-      "package.json"
+  "dist/**/*",
+  "node_modules/**/*",
+  "package.json",
+  "main.js",
+  "preload.js"
+]
     ]
   }
 }
