@@ -156,12 +156,17 @@ export default function App() {
     setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
   };
 
+  // REPARADO AQUÍ: Cambiado file:/// por media:/// para usar el protocolo de streaming de tu main.js
   const addFromPaths = (paths) => {
     const tracks = paths.map(p => {
       const name = p.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "");
       const ext = p.split(".").pop().toLowerCase();
       const videoExts = ["mp4","mkv","avi","mov","webm"];
-      return { name, url: `file:///${p.replace(/\\/g, "/")}`, type: videoExts.includes(ext) ? "video" : "audio" };
+      return { 
+        name, 
+        url: `media:///${p.replace(/\\/g, "/")}`, 
+        type: videoExts.includes(ext) ? "video" : "audio" 
+      };
     });
     setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
   };
@@ -194,15 +199,13 @@ export default function App() {
     else { await el.play(); setPlaying(true); }
   };
 
-  // SOLUCIÓN AL BUG DE ADELANTAR (SEEKING)
   const seek = (e) => {
     if (!mediaRef.current || !dur) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const v = ((e.clientX - rect.left) / rect.width) * dur;
     
-    // Cambiar la posición del reproductor nativo primero
+    // Cambiar la posición del reproductor nativo primero y forzar renderizado
     mediaRef.current.currentTime = v;
-    // Forzar la actualización del estado inmediatamente
     setCt(v);
   };
 
@@ -246,14 +249,12 @@ export default function App() {
         <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
       )}
 
-      {/* EL ELEMENTO MULTIMEDIA ÚNICO (AUDIO O VIDEO) */}
       {track?.type === "video"
         ? <video ref={mediaRef}
             onTimeUpdate={() => setCt(mediaRef.current?.currentTime || 0)}
             onDurationChange={() => setDur(mediaRef.current?.duration || 0)}
             onEnded={() => go(1)}
             onCanPlay={() => setupAudio(mediaRef.current)}
-            // Ya no lo escondemos con 1px, ahora muta según la pestaña
             style={tab === "video" ? { maxWidth: "100%", maxHeight: "100%", display: "block", margin: "auto" } : { position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
         : <audio ref={mediaRef}
             onTimeUpdate={() => setCt(mediaRef.current?.currentTime || 0)}
@@ -326,8 +327,7 @@ export default function App() {
               : (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#000" }}>
                   {track?.type === "video"
-                    ? /* El elemento de video real se mueve aquí mediante estilos del DOM de arriba para evitar duplicarse */
-                      <div id="video-container" style={{ width: "100%", height: "100%", display: "flex" }} />
+                    ? <div id="video-container" style={{ width: "100%", height: "100%", display: "flex" }} />
                     : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.15)" }}>
                         <div style={{ fontSize: 48, marginBottom: 12 }}>▷</div>
                         <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.8rem" }}>
@@ -342,7 +342,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Injectamos el video dinámicamente en su contenedor cuando se visualiza */}
       {tab === "video" && track?.type === "video" && mediaRef.current && (
         <PortalToId targetId="video-container" element={mediaRef.current} />
       )}
@@ -399,7 +398,6 @@ export default function App() {
   );
 }
 
-// Mini-componente de ayuda para mover el video de lugar sin desmontarlo del DOM
 function PortalToId({ targetId, element }) {
   useEffect(() => {
     const target = document.getElementById(targetId);
