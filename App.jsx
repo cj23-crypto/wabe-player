@@ -18,27 +18,47 @@ const parseLRC = (text) => {
   return out.sort((a, b) => a.time - b.time);
 };
 
-const DEMO = [
-  { time: 0,  text: "Carga tus canciones con el botón + MÚSICA" },
-  { time: 5,  text: "Sube un archivo .lrc para la letra sincronizada" },
-  { time: 10, text: "Toca cualquier pista de la lista" },
-  { time: 15, text: "Disfruta tu música ♪" },
-];
-
 const isElectron = typeof window !== "undefined" && !!window.electronAPI;
 
-/* ─── Visualizer ─── */
-function Viz({ analyser, playing }) {
+// Fetch synced lyrics from lrclib.net
+const fetchLyrics = async (filename) => {
+  try {
+    // Clean filename: remove track numbers, extensions, underscores
+    const clean = filename
+      .replace(/^\d+[\s._-]+/, "")
+      .replace(/[_]/g, " ")
+      .trim();
+
+    const res = await fetch(
+      `https://lrclib.net/api/search?q=${encodeURIComponent(clean)}`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const hit = data.find(d => d.syncedLyrics) || data[0];
+    if (!hit) return null;
+    if (hit.syncedLyrics) return parseLRC(hit.syncedLyrics);
+    // Plain lyrics fallback — show as static lines
+    return hit.plainLyrics
+      ? hit.plainLyrics.split("\n").filter(Boolean).map((text, i) => ({ time: i * 3, text }))
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/* ─── Visualizer (ScriptProcessor-free, no Web Audio seek bug) ─── */
+function Viz({ playing }) {
   const ref = useRef();
   const raf = useRef();
   useEffect(() => {
     const cv = ref.current;
     const ctx = cv.getContext("2d");
+    let bars = Array.from({ length: 48 }, () => 0);
     const draw = () => {
       raf.current = requestAnimationFrame(draw);
       const W = cv.width, H = cv.height;
       ctx.clearRect(0, 0, W, H);
-      if (!analyser || !playing) {
+      if (!playing) {
         ctx.strokeStyle = "rgba(255,255,255,0.07)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -49,31 +69,43 @@ function Viz({ analyser, playing }) {
         ctx.stroke();
         return;
       }
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(buf);
-      const bw = W / buf.length * 2.2;
-      buf.forEach((v, i) => {
-        const h = (v / 255) * H * 0.9;
-        ctx.fillStyle = `rgba(255,255,255,${0.12 + (v / 255) * 0.7})`;
+      // Animate bars randomly when playing (no Web Audio needed)
+      bars = bars.map(b => {
+        const target = Math.random() * 0.9;
+        return b + (target - b) * 0.15;
+      });
+      const bw = W / bars.length - 2;
+      bars.forEach((v, i) => {
+        const h = v * H * 0.85;
+        ctx.fillStyle = `rgba(255,255,255,${0.1 + v * 0.65})`;
         ctx.beginPath();
-        ctx.roundRect(i * (bw + 1), H - h, bw, h, 2);
+        ctx.roundRect(i * (bw + 2), H - h, bw, h, 2);
         ctx.fill();
       });
     };
     draw();
     return () => cancelAnimationFrame(raf.current);
-  }, [analyser, playing]);
+  }, [playing]);
   return <canvas ref={ref} width={900} height={60} style={{ width: "100%", height: 60, display: "block" }} />;
 }
 
 /* ─── Lyrics ─── */
-function Lyrics({ lines, t }) {
+function Lyrics({ lines, t, loading }) {
   const wrap = useRef();
   const active = useRef();
   const idx = lines.reduce((a, l, i) => t >= l.time ? i : a, -1);
   useEffect(() => {
     active.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [idx]);
+
+  if (loading) return (
+    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.85rem", color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>
+        Buscando letra...
+      </p>
+    </div>
+  );
+
   return (
     <div ref={wrap} style={{ height: "100%", overflowY: "auto", padding: "28px 20px", scrollbarWidth: "none" }}>
       {lines.map((l, i) => {
@@ -85,7 +117,6 @@ function Lyrics({ lines, t }) {
             fontSize: on ? "clamp(1.1rem,3vw,1.4rem)" : "clamp(0.85rem,2.5vw,1rem)",
             fontWeight: on ? 700 : 400,
             color: on ? "#fff" : past ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.42)",
-            letterSpacing: on ? "0.01em" : "0.02em",
             transition: "all 0.35s cubic-bezier(.4,0,.2,1)",
             transform: on ? "scale(1.04)" : "scale(1)",
             lineHeight: 1.4,
@@ -96,7 +127,7 @@ function Lyrics({ lines, t }) {
         <div style={{ textAlign: "center", marginTop: 60, color: "rgba(255,255,255,0.18)" }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>♩</div>
           <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.85rem" }}>
-            Sube un archivo .lrc para ver la letra
+            No se encontró letra — puedes subir un .lrc
           </p>
         </div>
       )}
@@ -113,62 +144,93 @@ export default function App() {
   const [dur, setDur] = useState(0);
   const [vol, setVol] = useState(0.85);
   const [tab, setTab] = useState("lyrics");
-  const [lyrics, setLyrics] = useState(DEMO);
-  const [analyser, setAnalyser] = useState(null);
+  const [lyrics, setLyrics] = useState([]);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [seeking, setSeeking] = useState(false);
 
-  const mediaRef = useRef();
-  const actxRef = useRef();
-  const srcRef = useRef();
+  const audioRef = useRef();
+  const videoRef = useRef();
   const fileIn = useRef();
   const lrcIn = useRef();
+  const playingRef = useRef(false);
 
   const track = playlist[idx] || null;
+  const isVideo = track?.type === "video";
 
-  const setupAudio = useCallback((el) => {
-    if (!el) return;
-    if (!actxRef.current) actxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = actxRef.current;
-    try { srcRef.current?.disconnect(); } catch {}
-    const src = ctx.createMediaElementSource(el);
-    const anl = ctx.createAnalyser();
-    anl.fftSize = 512;
-    src.connect(anl);
-    anl.connect(ctx.destination);
-    srcRef.current = src;
-    setAnalyser(anl);
-  }, []);
+  useEffect(() => { playingRef.current = playing; }, [playing]);
 
+  // Load track
   useEffect(() => {
-    const el = mediaRef.current;
+    const el = audioRef.current;
     if (!el || !track) return;
     el.src = track.url;
     el.load();
-    if (playing) el.play().catch(() => {});
-  }, [idx, track]);
+    setCt(0);
+    setDur(0);
+    if (playingRef.current) el.play().catch(() => {});
 
-  useEffect(() => { if (mediaRef.current) mediaRef.current.volume = vol; }, [vol]);
+    // Fetch lyrics automatically
+    setLyrics([]);
+    setLyricsLoading(true);
+    fetchLyrics(track.name).then(lines => {
+      setLyrics(lines || []);
+      setLyricsLoading(false);
+    });
+  }, [idx]);
+
+  // Sync video
+  useEffect(() => {
+    const vel = videoRef.current;
+    if (!vel || !track || !isVideo) return;
+    vel.src = track.url;
+    vel.load();
+    if (playingRef.current) vel.play().catch(() => {});
+  }, [idx, isVideo]);
+
+  // Sync video time
+  useEffect(() => {
+    const audio = audioRef.current;
+    const video = videoRef.current;
+    if (!audio || !video || !isVideo) return;
+    const sync = () => {
+      if (Math.abs(video.currentTime - audio.currentTime) > 0.5)
+        video.currentTime = audio.currentTime;
+    };
+    audio.addEventListener("timeupdate", sync);
+    return () => audio.removeEventListener("timeupdate", sync);
+  }, [isVideo, idx]);
+
+  // Volume
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = vol;
+  }, [vol]);
 
   const addFromInput = (files) => {
     const tracks = [...files]
       .filter(f => f.type.startsWith("audio/") || f.type.startsWith("video/"))
-      .map(f => ({ name: f.name.replace(/\.[^/.]+$/, ""), url: URL.createObjectURL(f), type: f.type.startsWith("video/") ? "video" : "audio" }));
+      .map(f => ({
+        name: f.name.replace(/\.[^/.]+$/, ""),
+        url: URL.createObjectURL(f),
+        type: f.type.startsWith("video/") ? "video" : "audio"
+      }));
     if (!tracks.length) return;
-    setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
+    setPlaylist(p => {
+      if (p.length === 0) setIdx(0);
+      return [...p, ...tracks];
+    });
   };
 
-  // REPARADO AQUÍ: Cambiado file:/// por media:/// para usar el protocolo de streaming de tu main.js
   const addFromPaths = (paths) => {
-    const tracks = paths.map(p => {
-      const name = p.split(/[\\/]/).pop().replace(/\.[^/.]+$/, "");
-      const ext = p.split(".").pop().toLowerCase();
-      const videoExts = ["mp4","mkv","avi","mov","webm"];
-      return { 
-        name, 
-        url: `media:///${p.replace(/\\/g, "/")}`, 
-        type: videoExts.includes(ext) ? "video" : "audio" 
-      };
+    const videoExts = ["mp4","mkv","avi","mov","webm"];
+    const tracks = paths.map(p => ({
+      name: p.split(/[\\/]/).pop().replace(/\.[^/.]+$/, ""),
+      url: `file:///${p.replace(/\\/g, "/")}`,
+      type: videoExts.includes(p.split(".").pop().toLowerCase()) ? "video" : "audio"
+    }));
+    setPlaylist(p => {
+      if (p.length === 0) setIdx(0);
+      return [...p, ...tracks];
     });
-    setPlaylist(p => { if (p.length === 0) setIdx(0); return [...p, ...tracks]; });
   };
 
   const openFiles = async () => {
@@ -182,31 +244,50 @@ export default function App() {
 
   const loadLRC = (file) => {
     const fr = new FileReader();
-    fr.onload = e => setLyrics(parseLRC(e.target.result));
+    fr.onload = e => { setLyrics(parseLRC(e.target.result)); setLyricsLoading(false); };
     fr.readAsText(file);
   };
 
-  const go = (dir) => {
-    const n = idx + dir;
-    if (n >= 0 && n < playlist.length) { setIdx(n); setPlaying(true); }
-  };
+  const go = useCallback((dir) => {
+    setIdx(prev => {
+      const n = prev + dir;
+      if (n >= 0) {
+        setPlaying(true);
+        return n;
+      }
+      return prev;
+    });
+  }, []);
 
   const togglePlay = async () => {
-    const el = mediaRef.current;
+    const el = audioRef.current;
     if (!el || !track) return;
-    if (actxRef.current?.state === "suspended") actxRef.current.resume();
-    if (playing) { el.pause(); setPlaying(false); }
-    else { await el.play(); setPlaying(true); }
+    if (playing) {
+      el.pause();
+      videoRef.current?.pause();
+      setPlaying(false);
+    } else {
+      await el.play();
+      if (isVideo) videoRef.current?.play().catch(() => {});
+      setPlaying(true);
+    }
   };
 
-  const seek = (e) => {
-    if (!mediaRef.current || !dur) return;
+  // Seek — pause, seek, resume to avoid freeze
+  const seek = async (e) => {
+    const el = audioRef.current;
+    if (!el || !dur) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const v = ((e.clientX - rect.left) / rect.width) * dur;
-    
-    // Cambiar la posición del reproductor nativo primero y forzar renderizado
-    mediaRef.current.currentTime = v;
+    const v = Math.max(0, Math.min(((e.clientX - rect.left) / rect.width) * dur, dur));
+    const wasPlaying = playingRef.current;
+    el.pause();
+    el.currentTime = v;
+    if (videoRef.current) videoRef.current.currentTime = v;
     setCt(v);
+    if (wasPlaying) {
+      try { await el.play(); if (isVideo) videoRef.current?.play().catch(() => {}); }
+      catch {}
+    }
   };
 
   const pct = dur ? (ct / dur) * 100 : 0;
@@ -239,29 +320,19 @@ export default function App() {
         }
       `}</style>
 
-      {!isElectron && (
-        <>
-          <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden onChange={e => addFromInput(e.target.files)} />
-          <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
-        </>
-      )}
-      {isElectron && (
-        <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
-      )}
+      <audio
+        ref={audioRef}
+        onTimeUpdate={() => setCt(audioRef.current?.currentTime || 0)}
+        onDurationChange={() => setDur(audioRef.current?.duration || 0)}
+        onEnded={() => go(1)}
+      />
 
-      {track?.type === "video"
-        ? <video ref={mediaRef}
-            onTimeUpdate={() => setCt(mediaRef.current?.currentTime || 0)}
-            onDurationChange={() => setDur(mediaRef.current?.duration || 0)}
-            onEnded={() => go(1)}
-            onCanPlay={() => setupAudio(mediaRef.current)}
-            style={tab === "video" ? { maxWidth: "100%", maxHeight: "100%", display: "block", margin: "auto" } : { position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
-        : <audio ref={mediaRef}
-            onTimeUpdate={() => setCt(mediaRef.current?.currentTime || 0)}
-            onDurationChange={() => setDur(mediaRef.current?.duration || 0)}
-            onEnded={() => go(1)}
-            onCanPlay={() => setupAudio(mediaRef.current)} />
-      }
+      {!isElectron && (
+        <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden
+          onChange={e => addFromInput(e.target.files)} />
+      )}
+      <input ref={lrcIn} type="file" accept=".lrc" hidden
+        onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
 
       {/* Header */}
       <header style={{
@@ -274,36 +345,34 @@ export default function App() {
         </span>
         <div style={{ display: "flex", gap: 8, WebkitAppRegion: "no-drag" }}>
           <button className="btn-ghost" onClick={openFiles}>+ MÚSICA</button>
-          <button className="btn-ghost" onClick={() => lrcIn.current?.click()}>+ LETRA .lrc</button>
+          <button className="btn-ghost" onClick={() => lrcIn.current?.click()}>+ .lrc manual</button>
         </div>
       </header>
 
       <div className="shell">
-        {/* Sidebar playlist */}
         <aside className="sidebar">
           <div style={{ padding: "14px 14px 8px", flexShrink: 0 }}>
             <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.62rem", color: "rgba(255,255,255,0.28)", letterSpacing: "0.14em" }}>
               LISTA — {playlist.length}
             </span>
           </div>
-
           {playlist.length === 0 && (
             <div onClick={openFiles}
               onDragOver={e => e.preventDefault()}
               onDrop={e => { e.preventDefault(); if (!isElectron) addFromInput(e.dataTransfer.files); }}
-              style={{ margin: "8px 12px", borderRadius: 10, border: "1.5px dashed rgba(255,255,255,0.1)", padding: "30px 16px", textAlign: "center", cursor: "pointer", transition: "border-color 0.2s" }}
+              style={{ margin: "8px 12px", borderRadius: 10, border: "1.5px dashed rgba(255,255,255,0.1)", padding: "30px 16px", textAlign: "center", cursor: "pointer" }}
               onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"}
               onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
             >
               <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.35 }}>↑</div>
               <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.78rem", color: "rgba(255,255,255,0.28)" }}>
-                {isElectron ? "Clic para abrir archivos" : "Arrastra o clic para cargar"}
+                {isElectron ? "Clic para abrir archivos" : "Arrastra o clic"}
               </p>
             </div>
           )}
-
           {playlist.map((t, i) => (
-            <div key={i} className={`pl-item${i === idx ? " active" : ""}`} onClick={() => { setIdx(i); setPlaying(true); }}>
+            <div key={i} className={`pl-item${i === idx ? " active" : ""}`}
+              onClick={() => { setIdx(i); setPlaying(true); }}>
               <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.58rem", color: "rgba(255,255,255,0.22)", minWidth: 18 }}>
                 {String(i + 1).padStart(2, "0")}
               </span>
@@ -314,7 +383,6 @@ export default function App() {
           ))}
         </aside>
 
-        {/* Content */}
         <div className="main">
           <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
             {[["lyrics","LETRA"],["video","VIDEO"]].map(([k,l]) => (
@@ -323,15 +391,15 @@ export default function App() {
           </div>
           <div style={{ flex: 1, overflow: "hidden" }}>
             {tab === "lyrics"
-              ? <Lyrics lines={lyrics} t={ct} />
+              ? <Lyrics lines={lyrics} t={ct} loading={lyricsLoading} />
               : (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#000" }}>
-                  {track?.type === "video"
-                    ? <div id="video-container" style={{ width: "100%", height: "100%", display: "flex" }} />
+                  {isVideo
+                    ? <video ref={videoRef} muted style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }} />
                     : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.15)" }}>
                         <div style={{ fontSize: 48, marginBottom: 12 }}>▷</div>
                         <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.8rem" }}>
-                          {track ? "Este archivo es solo audio" : "Carga un video"}
+                          {track ? "Solo audio" : "Carga un video"}
                         </p>
                       </div>
                   }
@@ -342,16 +410,10 @@ export default function App() {
         </div>
       </div>
 
-      {tab === "video" && track?.type === "video" && mediaRef.current && (
-        <PortalToId targetId="video-container" element={mediaRef.current} />
-      )}
-
-      {/* Visualizer */}
       <div style={{ background: "rgba(0,0,0,0.25)", borderTop: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
-        <Viz analyser={analyser} playing={playing} />
+        <Viz playing={playing} />
       </div>
 
-      {/* Controls */}
       <footer style={{ padding: "14px 20px 20px", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
         <div style={{ marginBottom: 10, display: "flex", alignItems: "baseline", gap: 10 }}>
           <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "clamp(0.9rem,2.5vw,1.1rem)", color: "#fff", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -362,20 +424,17 @@ export default function App() {
           </span>
         </div>
 
-        {/* Progress Bar */}
-        <div onClick={seek} style={{ height: 12, display: 'flex', alignItems: 'center', cursor: "pointer", marginBottom: 12, position: "relative" }}>
-          <div style={{ height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 99, width: '100%', position: "relative" }}>
-            <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, position: "relative" }}>
-              <div style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: 10, height: 10, borderRadius: "50%", background: "#fff" }} />
-            </div>
+        <div onClick={seek} style={{ height: 6, background: "rgba(255,255,255,0.1)", borderRadius: 99, cursor: "pointer", marginBottom: 16, position: "relative" }}>
+          <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.1s linear", position: "relative" }}>
+            <div style={{ position: "absolute", right: -6, top: "50%", transform: "translateY(-50%)", width: 12, height: 12, borderRadius: "50%", background: "#fff", boxShadow: "0 0 6px rgba(255,255,255,0.5)" }} />
           </div>
         </div>
 
-        {/* Transport */}
         <div style={{ display: "flex", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
             <span style={{ fontSize: "0.75rem", opacity: 0.3 }}>♪</span>
-            <input type="range" min={0} max={1} step={0.01} value={vol} onChange={e => setVol(+e.target.value)} style={{ maxWidth: 85 }} />
+            <input type="range" min={0} max={1} step={0.01} value={vol}
+              onChange={e => setVol(+e.target.value)} style={{ maxWidth: 85 }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button className="ctrl-btn" onClick={() => go(-1)}>⏮</button>
@@ -397,16 +456,4 @@ export default function App() {
     </div>
   );
 }
-
-function PortalToId({ targetId, element }) {
-  useEffect(() => {
-    const target = document.getElementById(targetId);
-    if (target && element) {
-      target.appendChild(element);
-      return () => {
-        document.body.appendChild(element);
-      };
-    }
-  }, [targetId, element]);
-  return null;
-}
+ 
