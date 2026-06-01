@@ -2,12 +2,20 @@ const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
+const AUDIO_EXTS = [".mp3",".mp4",".wav",".flac",".ogg",".aac",".m4a",".webm",".mkv",".avi",".opus"];
+
+function getFilesFromFolder(folder) {
+  try {
+    return fs.readdirSync(folder)
+      .filter(f => AUDIO_EXTS.includes(path.extname(f).toLowerCase()))
+      .sort()
+      .map(f => path.join(folder, f));
+  } catch { return []; }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1100,
-    height: 720,
-    minWidth: 360,
-    minHeight: 600,
+    width: 1100, height: 720, minWidth: 360, minHeight: 600,
     backgroundColor: "#0a0a0f",
     webPreferences: {
       nodeIntegration: false,
@@ -16,9 +24,7 @@ function createWindow() {
     },
     title: "Wave Player",
     show: false,
-    frame: true,
   });
-
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(process.resourcesPath, "dist", "index.html"));
   win.once("ready-to-show", () => win.show());
@@ -37,18 +43,15 @@ ipcMain.handle("open-files", async () => {
   return result.filePaths;
 });
 
-// Open a folder and return all audio/video files inside
+// Open folder via dialog — returns { folderPath, paths }
 ipcMain.handle("open-folder", async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ["openDirectory"],
-  });
-  if (result.canceled || !result.filePaths.length) return [];
+  const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+  if (result.canceled || !result.filePaths.length) return { folderPath: null, paths: [] };
   const folder = result.filePaths[0];
-  const audioExts = [".mp3",".mp4",".wav",".flac",".ogg",".aac",".m4a",".webm",".mkv",".avi",".opus"];
-  const files = fs.readdirSync(folder)
-    .filter(f => audioExts.includes(path.extname(f).toLowerCase()))
-    .sort()
-    .map(f => path.join(folder, f));
-  return files;
+  return { folderPath: folder, paths: getFilesFromFolder(folder) };
 });
- 
+
+// Load folder by path (used on startup to reload saved folder)
+ipcMain.handle("open-folder-path", async (_, folderPath) => {
+  return getFilesFromFolder(folderPath);
+});
