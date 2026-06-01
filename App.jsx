@@ -309,6 +309,34 @@ export default function App() {
     el.addEventListener("wheel",fn,{passive:false}); return ()=>el.removeEventListener("wheel",fn);
   }, []);
 
+  // Move the single video element into the video slot — no decode duplication
+  useEffect(() => {
+    const vel = videoRef.current;
+    if (!vel) return;
+    const slot = document.getElementById("video-slot");
+    if (slot && isVideo) {
+      vel.style.position = "absolute";
+      vel.style.inset = "0";
+      vel.style.width = "100%";
+      vel.style.height = "100%";
+      vel.style.objectFit = "cover";
+      vel.style.opacity = "1";
+      vel.style.pointerEvents = "none";
+      vel.style.zIndex = "1";
+      slot.prepend(vel);
+    } else {
+      // Move back to body hidden when not video
+      vel.style.position = "fixed";
+      vel.style.width = "1px";
+      vel.style.height = "1px";
+      vel.style.opacity = "0";
+      vel.style.top = "0";
+      vel.style.left = "0";
+      vel.style.zIndex = "-1";
+      document.body.appendChild(vel);
+    }
+  }, [isVideo, tab]);
+
   const pathsToTracks = (paths) => paths.map(p=>({
     name: p.split(/[\\/]/).pop().replace(/\.[^/.]+$/,""),
     url: `file:///${p.replace(/\\/g,"/")}`,
@@ -427,12 +455,12 @@ export default function App() {
         {/* Audio element — only for audio tracks */}
         <audio ref={audioRef} onDurationChange={()=>{if(!isVideo)setDur(audioRef.current?.duration||0);}} onEnded={handleEnded} />
 
-        {/* Video element — SINGLE element, always in DOM, never remounted */}
+        {/* Single video element — hidden, audio source only. Display happens in tab via src mirror */}
         <video
           ref={videoRef}
           onDurationChange={()=>{if(isVideo)setDur(videoRef.current?.duration||0);}}
           onEnded={handleEnded}
-          style={{ position:"fixed", top:0, left:0, width:1, height:1, opacity:0, pointerEvents:"none" }}
+          style={{ position:"fixed", width:1, height:1, opacity:0, top:0, left:0, pointerEvents:"none" }}
         />
 
         {!isElectron && <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden onChange={e=>addFromInput(e.target.files)} />}
@@ -510,53 +538,30 @@ export default function App() {
                 <LyricsOverlay lines={lyrics} mediaRef={mediaRef} loading={lyricsLoading} accent={accent} />
               </div>
 
-              {/* VIDEO TAB — uses a new <video> element just for display, synced via timeupdate */}
-              <div style={{ position:"absolute", inset:0, display:tab==="video"?"flex":"none", alignItems:"center", justifyContent:"center", background:"#000", flexDirection:"column" }}>
-                {isVideo ? (
-                  <div style={{ position:"relative", width:"100%", height:"100%" }}>
-                    {/* Display video — separate from the hidden one, to avoid remount issues */}
-                    <video
-                      key={`display-${track?.url}`}
-                      src={track?.url}
-                      style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
-                      ref={el => {
-                        if (!el) return;
-                        // Sync on mount
-                        const master = videoRef.current;
-                        if (master) {
-                          el.currentTime = master.currentTime;
-                          el.volume = vol;
-                          if (playing) el.play().catch(()=>{});
-                          // Sync time periodically
-                          el._syncInterval = setInterval(()=>{
-                            if (master && el && Math.abs(el.currentTime - master.currentTime) > 0.5)
-                              el.currentTime = master.currentTime;
-                          }, 1000);
-                        }
-                      }}
-                      onUnmount={el => { if (el?._syncInterval) clearInterval(el._syncInterval); }}
-                      muted={false}
-                      controls={false}
-                    />
-                    {/* Lyrics overlay toggle */}
-                    <div style={{ position:"absolute", bottom:14, right:14, display:"flex", gap:8, zIndex:10 }}>
-                      <button className={`vbtn${videoLyrics?" on":""}`} onClick={()=>setVL(v=>!v)}>
-                        {videoLyrics?"✕ Letra":"♪ Letra"}
-                      </button>
+              {/* VIDEO TAB — videoRef is moved here via useEffect */}
+              <div id="video-slot" style={{ position:"absolute", inset:0, display:tab==="video"?"block":"none", background:"#000", overflow:"hidden" }}>
+                {!isVideo && (
+                  <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <div style={{ textAlign:"center", color:"rgba(255,255,255,0.13)" }}>
+                      <div style={{ fontSize:44, marginBottom:12 }}>▷</div>
+                      <p style={{ fontFamily:"'Syne',sans-serif", fontSize:"0.8rem" }}>{track?"Solo audio":"Carga un video"}</p>
                     </div>
-                    {/* Lyrics overlay on video */}
-                    {videoLyrics && (
-                      <div style={{ position:"absolute", inset:0, zIndex:5, background:"linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)", pointerEvents:"none" }}>
-                        <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"60%", overflow:"hidden" }}>
-                          <LyricsOverlay lines={lyrics} mediaRef={mediaRef} loading={lyricsLoading} accent={accent} />
-                        </div>
-                      </div>
-                    )}
                   </div>
-                ) : (
-                  <div style={{ textAlign:"center", color:"rgba(255,255,255,0.13)" }}>
-                    <div style={{ fontSize:44, marginBottom:12 }}>▷</div>
-                    <p style={{ fontFamily:"'Syne',sans-serif", fontSize:"0.8rem" }}>{track?"Solo audio":"Carga un video"}</p>
+                )}
+                {/* Lyrics overlay on video */}
+                {isVideo && videoLyrics && (
+                  <div style={{ position:"absolute", inset:0, zIndex:10, background:"linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 55%, transparent 100%)", pointerEvents:"none" }}>
+                    <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"65%" }}>
+                      <LyricsOverlay lines={lyrics} mediaRef={mediaRef} loading={lyricsLoading} accent={accent} />
+                    </div>
+                  </div>
+                )}
+                {/* Lyrics toggle button */}
+                {isVideo && (
+                  <div style={{ position:"absolute", bottom:14, right:14, zIndex:20 }}>
+                    <button className={`vbtn${videoLyrics?" on":""}`} onClick={()=>setVL(v=>!v)}>
+                      {videoLyrics?"✕ Letra":"♪ Letra"}
+                    </button>
                   </div>
                 )}
               </div>
