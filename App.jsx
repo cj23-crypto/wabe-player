@@ -33,6 +33,7 @@ const fetchLyrics = async (filename) => {
 };
 const isElectron = typeof window !== "undefined" && !!window.electronAPI;
 const videoExts = ["mp4","mkv","avi","mov","webm"];
+const FOLDER_KEY = "wave_last_folder";
 
 /* ─── Icons ─── */
 const IconPrev = () => (
@@ -105,23 +106,42 @@ function Viz({ playing, analyserRef }) {
   return <canvas ref={cvRef} width={900} height={80} style={{ width: "100%", height: 80, display: "block" }} />;
 }
 
-/* ─── Lyrics ─── */
-function Lyrics({ lines, t, loading }) {
+/* ─── Lyrics — reads currentTime via RAF for tight sync ─── */
+function Lyrics({ lines, audioRef, loading }) {
+  const [ct, setCt] = useState(0);
   const wrapRef = useRef();
   const activeRef = useRef();
-  const idx = lines.reduce((a, l, i) => t >= l.time ? i : a, -1);
-  useEffect(() => { activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [idx]);
+  const rafRef = useRef();
+
+  // Tight sync loop — reads audio currentTime every frame
+  useEffect(() => {
+    const tick = () => {
+      const el = audioRef.current;
+      if (el) setCt(el.currentTime);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [audioRef]);
+
+  const idx = lines.reduce((a, l, i) => ct >= l.time ? i : a, -1);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [idx]);
+
   if (loading) return (
     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.85rem", color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", animation: "pulse 1.5s ease-in-out infinite" }}>Buscando letra...</p>
     </div>
   );
+
   return (
     <div ref={wrapRef} style={{ height: "100%", overflowY: "auto", padding: "28px 24px", scrollbarWidth: "none", maskImage: "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)" }}>
       {lines.map((l, i) => {
         const on = i === idx, dist = Math.abs(i - idx);
         return (
-          <p key={i} ref={on ? activeRef : null} style={{ margin: "0 0 24px", textAlign: "center", fontFamily: "'Syne',sans-serif", fontSize: on ? "clamp(1.1rem,3vw,1.4rem)" : "clamp(0.85rem,2.5vw,1rem)", fontWeight: on ? 700 : 400, color: "#fff", opacity: on ? 1 : Math.max(0.12, 0.5 - dist * 0.1), filter: `blur(${on ? 0 : Math.min(dist * 1.2, 4)}px)`, transition: "all 0.4s cubic-bezier(.4,0,.2,1)", transform: on ? "scale(1.04)" : "scale(1)", lineHeight: 1.45 }}>{l.text}</p>
+          <p key={i} ref={on ? activeRef : null} style={{ margin: "0 0 24px", textAlign: "center", fontFamily: "'Syne',sans-serif", fontSize: on ? "clamp(1.1rem,3vw,1.4rem)" : "clamp(0.85rem,2.5vw,1rem)", fontWeight: on ? 700 : 400, color: "#fff", opacity: on ? 1 : Math.max(0.12, 0.5 - dist * 0.1), filter: `blur(${on ? 0 : Math.min(dist * 1.2, 4)}px)`, transition: "opacity 0.35s ease, filter 0.35s ease, font-size 0.35s ease, transform 0.35s ease", transform: on ? "scale(1.04)" : "scale(1)", lineHeight: 1.45 }}>{l.text}</p>
         );
       })}
       {lines.length === 0 && (
@@ -141,16 +161,16 @@ function WelcomeModal({ onOpenFolder, onSkip }) {
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)" }}>
       <div style={{ background: "rgba(20,20,30,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: "40px 44px", textAlign: "center", maxWidth: 380, boxShadow: "0 40px 80px rgba(0,0,0,0.5)" }}>
         <div style={{ fontSize: "2.5rem", marginBottom: 16 }}>♫</div>
-        <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "1.3rem", color: "#fff", marginBottom: 10, letterSpacing: "0.02em" }}>Bienvenido a Wave</h2>
+        <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: "1.3rem", color: "#fff", marginBottom: 10 }}>Bienvenido a Wave</h2>
         <p style={{ fontFamily: "'Syne',sans-serif", fontSize: "0.82rem", color: "rgba(255,255,255,0.45)", marginBottom: 28, lineHeight: 1.6 }}>
           ¿Quieres cargar una carpeta con tu música para empezar?
         </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={onOpenFolder} style={{ background: "#fff", border: "none", borderRadius: 10, padding: "11px 24px", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s" }}
+          <button onClick={onOpenFolder} style={{ background: "#fff", border: "none", borderRadius: 10, padding: "11px 24px", fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", transition: "opacity 0.15s" }}
             onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
             onMouseLeave={e => e.currentTarget.style.opacity = "1"}
           >Abrir carpeta</button>
-          <button onClick={onSkip} style={{ background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "11px 24px", fontFamily: "'Syne',sans-serif", fontWeight: 600, fontSize: "0.8rem", color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", cursor: "pointer", transition: "border-color 0.2s,color 0.2s" }}
+          <button onClick={onSkip} style={{ background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "11px 24px", fontFamily: "'Syne',sans-serif", fontWeight: 600, fontSize: "0.8rem", color: "rgba(255,255,255,0.5)", cursor: "pointer", transition: "border-color 0.2s,color 0.2s" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.4)"; e.currentTarget.style.color = "#fff"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
           >Más tarde</button>
@@ -165,7 +185,6 @@ export default function App() {
   const [playlist, setPlaylist] = useState([]);
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [ct, setCt] = useState(0);
   const [dur, setDur] = useState(0);
   const [vol, setVol] = useState(0.85);
   const [tab, setTab] = useState("lyrics");
@@ -173,7 +192,9 @@ export default function App() {
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [progressHover, setProgressHover] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(isElectron); // only show in desktop app
+  const [ct, setCt] = useState(0);
+  // Only show welcome modal if first time (no saved folder)
+  const [showWelcome, setShowWelcome] = useState(() => isElectron && !localStorage.getItem(FOLDER_KEY));
 
   const audioRef = useRef();
   const videoRef = useRef();
@@ -191,6 +212,16 @@ export default function App() {
 
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
+  // Sync ct for progress bar
+  useEffect(() => {
+    const tick = () => {
+      if (audioRef.current) setCt(audioRef.current.currentTime);
+      requestAnimationFrame(tick);
+    };
+    const id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   const setupAudio = useCallback((el) => {
     if (!el || el._waveSetup) return;
     el._waveSetup = true;
@@ -204,11 +235,26 @@ export default function App() {
     srcRef.current = src; analyserRef.current = anl;
   }, []);
 
-  // Load track whenever idx or playlist changes (fixes first-song bug)
+  // Load saved folder on startup (without showing modal)
+  useEffect(() => {
+    if (!isElectron) return;
+    const saved = localStorage.getItem(FOLDER_KEY);
+    if (saved) {
+      window.electronAPI.openFolderPath(saved).then(paths => {
+        if (paths?.length) {
+          loadedIdxRef.current = -1;
+          setIdx(0);
+          setPlaylist(pathsToTracks(paths));
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Load track
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !track) return;
-    if (loadedIdxRef.current === idx) return; // already loaded
+    if (loadedIdxRef.current === idx) return;
     loadedIdxRef.current = idx;
     el.src = track.url; el.load();
     setCt(0); setDur(0);
@@ -217,7 +263,7 @@ export default function App() {
     fetchLyrics(track.name).then(lines => { setLyrics(lines || []); setLyricsLoading(false); });
   }, [idx, playlist]);
 
-  // Video src sync — keep video in DOM always, just show/hide
+  // Video sync
   useEffect(() => {
     const vel = videoRef.current;
     if (!vel || !track || !isVideo) return;
@@ -225,18 +271,21 @@ export default function App() {
     if (playingRef.current) vel.play().catch(() => {});
   }, [idx, playlist, isVideo]);
 
-  // Sync video time with audio
+  // Keep video time in sync with audio
   useEffect(() => {
     const audio = audioRef.current, video = videoRef.current;
     if (!audio || !video) return;
-    const sync = () => { if (isVideo && Math.abs(video.currentTime - audio.currentTime) > 0.5) video.currentTime = audio.currentTime; };
+    const sync = () => {
+      if (isVideo && Math.abs(video.currentTime - audio.currentTime) > 0.3)
+        video.currentTime = audio.currentTime;
+    };
     audio.addEventListener("timeupdate", sync);
     return () => audio.removeEventListener("timeupdate", sync);
   }, [isVideo]);
 
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol]);
 
-  // Scroll to change volume
+  // Scroll wheel = volume
   useEffect(() => {
     const el = footerRef.current;
     if (!el) return;
@@ -271,11 +320,12 @@ export default function App() {
 
   const openFolder = async () => {
     if (isElectron) {
-      const paths = await window.electronAPI.openFolder();
-      if (paths?.length) {
+      const result = await window.electronAPI.openFolder();
+      if (result?.paths?.length) {
+        if (result.folderPath) localStorage.setItem(FOLDER_KEY, result.folderPath);
         loadedIdxRef.current = -1;
         setIdx(0);
-        setPlaylist(pathsToTracks(paths));
+        setPlaylist(pathsToTracks(result.paths));
       }
     } else {
       fileIn.current?.click();
@@ -288,6 +338,19 @@ export default function App() {
     fr.onload = e => { setLyrics(parseLRC(e.target.result)); setLyricsLoading(false); };
     fr.readAsText(file);
   };
+
+  // Auto-next when song ends
+  const handleEnded = useCallback(() => {
+    setIdx(prev => {
+      if (prev + 1 < playlist.length) {
+        loadedIdxRef.current = -1;
+        setPlaying(true);
+        return prev + 1;
+      }
+      setPlaying(false);
+      return prev;
+    });
+  }, [playlist.length]);
 
   const go = useCallback((dir) => {
     setIdx(prev => {
@@ -316,10 +379,13 @@ export default function App() {
     const rect = e.currentTarget.getBoundingClientRect();
     const v = Math.max(0, Math.min(((e.clientX - rect.left) / rect.width) * dur, dur));
     const wasPlaying = playingRef.current;
-    el.pause(); el.currentTime = v;
+    el.pause();
+    el.currentTime = v;
     if (videoRef.current) videoRef.current.currentTime = v;
     setCt(v);
-    if (wasPlaying) { try { await el.play(); if (isVideo) videoRef.current?.play().catch(() => {}); } catch {} }
+    if (wasPlaying) {
+      try { await el.play(); if (isVideo) videoRef.current?.play().catch(() => {}); } catch {}
+    }
   };
 
   const pct = dur ? (ct / dur) * 100 : 0;
@@ -373,18 +439,16 @@ export default function App() {
         ))}
       </div>
 
-      {/* Welcome modal */}
       {showWelcome && <WelcomeModal onOpenFolder={openFolder} onSkip={() => setShowWelcome(false)} />}
 
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
 
-        {/* Hidden audio — always in DOM */}
+        {/* Audio — always in DOM, handles all sound */}
         <audio ref={audioRef}
-          onTimeUpdate={() => setCt(audioRef.current?.currentTime || 0)}
           onDurationChange={() => setDur(audioRef.current?.duration || 0)}
-          onEnded={() => go(1)} />
+          onEnded={handleEnded} />
 
-        {/* Hidden video — always in DOM, visibility toggled via CSS */}
+        {/* Video — always in DOM, MUTED (audio element handles sound) */}
         <video ref={videoRef} muted
           style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none", top: 0, left: 0 }} />
 
@@ -394,7 +458,7 @@ export default function App() {
         {/* Header */}
         <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, WebkitAppRegion: "drag", backdropFilter: "blur(12px)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, WebkitAppRegion: "no-drag" }}>
-            <button onClick={() => setSidebarOpen(o => !o)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.38)", fontSize: "1rem", padding: "4px 6px", cursor: "pointer", borderRadius: 6, transition: "color 0.2s", lineHeight: 1 }}
+            <button onClick={() => setSidebarOpen(o => !o)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.38)", fontSize: "1rem", padding: "4px 6px", cursor: "pointer", borderRadius: 6, transition: "color 0.2s" }}
               onMouseEnter={e => e.currentTarget.style.color = "#fff"}
               onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.38)"}
             >{sidebarOpen ? "◧" : "▣"}</button>
@@ -408,7 +472,6 @@ export default function App() {
         </header>
 
         <div className="shell">
-          {/* Sidebar */}
           <aside className={`sidebar${sidebarOpen ? "" : " closed"}`}>
             <div style={{ padding: "13px 14px 7px", flexShrink: 0 }}>
               <span style={{ fontFamily: "'Azeret Mono',monospace", fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", letterSpacing: "0.14em" }}>LISTA — {playlist.length}</span>
@@ -445,7 +508,6 @@ export default function App() {
             ))}
           </aside>
 
-          {/* Main */}
           <div className="main">
             <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
               {[["lyrics","LETRA"],["video","VIDEO"]].map(([k,l]) => (
@@ -453,16 +515,22 @@ export default function App() {
               ))}
             </div>
             <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-              {/* Lyrics — always mounted */}
               <div style={{ position: "absolute", inset: 0, display: tab === "lyrics" ? "block" : "none" }}>
-                <Lyrics lines={lyrics} t={ct} loading={lyricsLoading} />
+                <Lyrics lines={lyrics} audioRef={audioRef} loading={lyricsLoading} />
               </div>
-              {/* Video — always mounted, synced via hidden video ref */}
               <div style={{ position: "absolute", inset: 0, display: tab === "video" ? "flex" : "none", alignItems: "center", justifyContent: "center", background: "#000" }}>
                 {isVideo
-                  ? <video src={track?.url} controls
+                  ? <video
+                      key={track?.url}
+                      src={track?.url}
+                      muted
                       style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }}
-                      onTimeUpdate={e => { if (audioRef.current) audioRef.current.currentTime = e.target.currentTime; }}
+                      ref={el => {
+                        if (el && audioRef.current) {
+                          el.currentTime = audioRef.current.currentTime;
+                          if (playing) el.play().catch(() => {});
+                        }
+                      }}
                     />
                   : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.13)" }}>
                       <div style={{ fontSize: 44, marginBottom: 12 }}>▷</div>
@@ -474,12 +542,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Visualizer */}
         <div style={{ background: "rgba(0,0,0,0.2)", borderTop: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
           <Viz playing={playing} analyserRef={analyserRef} />
         </div>
 
-        {/* Controls */}
         <footer ref={footerRef} style={{ padding: "13px 20px 18px", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, backdropFilter: "blur(12px)" }}>
           <div style={{ marginBottom: 10, display: "flex", alignItems: "baseline", gap: 10 }}>
             <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: "clamp(0.9rem,2.5vw,1.1rem)", color: "#fff", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -490,9 +556,8 @@ export default function App() {
             </span>
           </div>
 
-          {/* Progress */}
           <div className="progress-track" onClick={seek} onMouseEnter={() => setProgressHover(true)} onMouseLeave={() => setProgressHover(false)} style={{ marginBottom: 15 }}>
-            <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.1s linear", position: "relative" }}>
+            <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.05s linear", position: "relative" }}>
               <div className="progress-dot" style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: 0, height: 0, borderRadius: "50%", background: "#fff", transition: "width 0.2s,height 0.2s", boxShadow: "0 0 8px rgba(255,255,255,0.6)" }} />
             </div>
           </div>
