@@ -83,8 +83,7 @@ function Viz({ playing, analyserRef }) {
         const v = fd ? (fd[Math.floor(i * fd.length / barCount / 2)] / 255) : (playing ? 0.08 + Math.random() * 0.12 : 0.03);
         const bh = v * H * 0.85;
         const bw = (halfW / barCount) - 1.5;
-        const alpha = 0.08 + v * 0.7;
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fillStyle = `rgba(255,255,255,${0.08 + v * 0.7})`;
         const xr = halfW + i * (bw + 1.5);
         ctx.beginPath(); ctx.roundRect(xr, H - bh, bw, bh, 2); ctx.fill();
         const xl = halfW - (i + 1) * (bw + 1.5);
@@ -106,29 +105,24 @@ function Viz({ playing, analyserRef }) {
   return <canvas ref={cvRef} width={900} height={80} style={{ width: "100%", height: 80, display: "block" }} />;
 }
 
-/* ─── Lyrics — reads currentTime via RAF for tight sync ─── */
-function Lyrics({ lines, audioRef, loading }) {
+/* ─── Lyrics — tight RAF sync ─── */
+function Lyrics({ lines, mediaRef, loading }) {
   const [ct, setCt] = useState(0);
   const wrapRef = useRef();
   const activeRef = useRef();
-  const rafRef = useRef();
 
-  // Tight sync loop — reads audio currentTime every frame
   useEffect(() => {
+    let id;
     const tick = () => {
-      const el = audioRef.current;
-      if (el) setCt(el.currentTime);
-      rafRef.current = requestAnimationFrame(tick);
+      if (mediaRef.current) setCt(mediaRef.current.currentTime);
+      id = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [audioRef]);
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [mediaRef]);
 
   const idx = lines.reduce((a, l, i) => ct >= l.time ? i : a, -1);
-
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [idx]);
+  useEffect(() => { activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [idx]);
 
   if (loading) return (
     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -191,36 +185,44 @@ export default function App() {
   const [lyrics, setLyrics] = useState([]);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [progressHover, setProgressHover] = useState(false);
   const [ct, setCt] = useState(0);
-  // Only show welcome modal if first time (no saved folder)
   const [showWelcome, setShowWelcome] = useState(() => isElectron && !localStorage.getItem(FOLDER_KEY));
 
-  const audioRef = useRef();
-  const videoRef = useRef();
+  const audioRef = useRef();   // for audio-only tracks
+  const videoRef = useRef();   // for video tracks — handles its OWN audio
   const analyserRef = useRef();
   const actxRef = useRef();
   const srcRef = useRef();
+  const progressFillRef = useRef();
   const fileIn = useRef();
   const lrcIn = useRef();
-  const playingRef = useRef(false);
   const footerRef = useRef();
+  const playingRef = useRef(false);
   const loadedIdxRef = useRef(-1);
 
   const track = playlist[idx] || null;
   const isVideo = track?.type === "video";
 
+  // The active media element — video handles itself when playing video
+  const activeRef = isVideo ? videoRef : audioRef;
+
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
-  // Sync ct for progress bar
+  // Progress bar via direct DOM — smooth, no React re-render
   useEffect(() => {
+    let id;
     const tick = () => {
-      if (audioRef.current) setCt(audioRef.current.currentTime);
-      requestAnimationFrame(tick);
+      const el = activeRef.current;
+      if (el) {
+        const pct = el.duration ? (el.currentTime / el.duration) * 100 : 0;
+        if (progressFillRef.current) progressFillRef.current.style.width = `${pct}%`;
+        setCt(el.currentTime);
+      }
+      id = requestAnimationFrame(tick);
     };
-    const id = requestAnimationFrame(tick);
+    id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [isVideo]);
 
   const setupAudio = useCallback((el) => {
     if (!el || el._waveSetup) return;
@@ -235,57 +237,56 @@ export default function App() {
     srcRef.current = src; analyserRef.current = anl;
   }, []);
 
-  // Load saved folder on startup (without showing modal)
+  // Load saved folder on startup
   useEffect(() => {
     if (!isElectron) return;
     const saved = localStorage.getItem(FOLDER_KEY);
     if (saved) {
       window.electronAPI.openFolderPath(saved).then(paths => {
-        if (paths?.length) {
-          loadedIdxRef.current = -1;
-          setIdx(0);
-          setPlaylist(pathsToTracks(paths));
-        }
+        if (paths?.length) { loadedIdxRef.current = -1; setIdx(0); setPlaylist(pathsToTracks(paths)); }
       }).catch(() => {});
     }
   }, []);
 
-  // Load track
+  // Load track — route to correct element
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el || !track) return;
+    if (!track) return;
     if (loadedIdxRef.current === idx) return;
     loadedIdxRef.current = idx;
-    el.src = track.url; el.load();
+
+    if (isVideo) {
+      // Stop audio if it was playing
+      const ael = audioRef.current;
+      if (ael) { ael.pause(); ael.src = ""; }
+      const vel = videoRef.current;
+      if (vel) {
+        vel.src = track.url; vel.load();
+        vel.volume = vol;
+        if (playingRef.current) vel.play().catch(() => {});
+      }
+    } else {
+      // Stop video if it was playing
+      const vel = videoRef.current;
+      if (vel) { vel.pause(); vel.src = ""; }
+      const ael = audioRef.current;
+      if (ael) {
+        ael.src = track.url; ael.load();
+        ael.volume = vol;
+        if (playingRef.current) ael.play().catch(() => {});
+      }
+    }
+
     setCt(0); setDur(0);
-    if (playingRef.current) el.play().catch(() => {});
     setLyrics([]); setLyricsLoading(true);
     fetchLyrics(track.name).then(lines => { setLyrics(lines || []); setLyricsLoading(false); });
-  }, [idx, playlist]);
-
-  // Video sync
-  useEffect(() => {
-    const vel = videoRef.current;
-    if (!vel || !track || !isVideo) return;
-    vel.src = track.url; vel.load();
-    if (playingRef.current) vel.play().catch(() => {});
   }, [idx, playlist, isVideo]);
 
-  // Keep video time in sync with audio
   useEffect(() => {
-    const audio = audioRef.current, video = videoRef.current;
-    if (!audio || !video) return;
-    const sync = () => {
-      if (isVideo && Math.abs(video.currentTime - audio.currentTime) > 0.3)
-        video.currentTime = audio.currentTime;
-    };
-    audio.addEventListener("timeupdate", sync);
-    return () => audio.removeEventListener("timeupdate", sync);
-  }, [isVideo]);
+    if (audioRef.current) audioRef.current.volume = vol;
+    if (videoRef.current) videoRef.current.volume = vol;
+  }, [vol]);
 
-  useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol]);
-
-  // Scroll wheel = volume
+  // Scroll = volume
   useEffect(() => {
     const el = footerRef.current;
     if (!el) return;
@@ -323,13 +324,9 @@ export default function App() {
       const result = await window.electronAPI.openFolder();
       if (result?.paths?.length) {
         if (result.folderPath) localStorage.setItem(FOLDER_KEY, result.folderPath);
-        loadedIdxRef.current = -1;
-        setIdx(0);
-        setPlaylist(pathsToTracks(result.paths));
+        loadedIdxRef.current = -1; setIdx(0); setPlaylist(pathsToTracks(result.paths));
       }
-    } else {
-      fileIn.current?.click();
-    }
+    } else fileIn.current?.click();
     setShowWelcome(false);
   };
 
@@ -339,16 +336,10 @@ export default function App() {
     fr.readAsText(file);
   };
 
-  // Auto-next when song ends
   const handleEnded = useCallback(() => {
     setIdx(prev => {
-      if (prev + 1 < playlist.length) {
-        loadedIdxRef.current = -1;
-        setPlaying(true);
-        return prev + 1;
-      }
-      setPlaying(false);
-      return prev;
+      if (prev + 1 < playlist.length) { loadedIdxRef.current = -1; setPlaying(true); return prev + 1; }
+      setPlaying(false); return prev;
     });
   }, [playlist.length]);
 
@@ -361,31 +352,25 @@ export default function App() {
   }, [playlist.length]);
 
   const togglePlay = async () => {
-    const el = audioRef.current;
+    const el = activeRef.current;
     if (!el || !track) return;
-    if (actxRef.current?.state === "suspended") actxRef.current.resume();
+    if (!isVideo && actxRef.current?.state === "suspended") actxRef.current.resume();
     if (playing) {
-      el.pause(); videoRef.current?.pause(); setPlaying(false);
+      el.pause(); setPlaying(false);
     } else {
-      setupAudio(el); await el.play();
-      if (isVideo) videoRef.current?.play().catch(() => {});
-      setPlaying(true);
+      if (!isVideo) setupAudio(el);
+      await el.play(); setPlaying(true);
     }
   };
 
   const seek = async (e) => {
-    const el = audioRef.current;
+    const el = activeRef.current;
     if (!el || !dur) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const v = Math.max(0, Math.min(((e.clientX - rect.left) / rect.width) * dur, dur));
     const wasPlaying = playingRef.current;
-    el.pause();
-    el.currentTime = v;
-    if (videoRef.current) videoRef.current.currentTime = v;
-    setCt(v);
-    if (wasPlaying) {
-      try { await el.play(); if (isVideo) videoRef.current?.play().catch(() => {}); } catch {}
-    }
+    el.pause(); el.currentTime = v; setCt(v);
+    if (wasPlaying) { try { await el.play(); } catch {} }
   };
 
   const pct = dur ? (ct / dur) * 100 : 0;
@@ -443,14 +428,11 @@ export default function App() {
 
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
 
-        {/* Audio — always in DOM, handles all sound */}
-        <audio ref={audioRef}
-          onDurationChange={() => setDur(audioRef.current?.duration || 0)}
-          onEnded={handleEnded} />
+        {/* Audio element — only used for audio tracks */}
+        <audio ref={audioRef} onDurationChange={() => { if (!isVideo) setDur(audioRef.current?.duration || 0); }} onEnded={handleEnded} />
 
-        {/* Video — always in DOM, MUTED (audio element handles sound) */}
-        <video ref={videoRef} muted
-          style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none", top: 0, left: 0 }} />
+        {/* Video element — used for video tracks, handles its own audio */}
+        <video ref={videoRef} style={{ display: "none" }} onDurationChange={() => { if (isVideo) setDur(videoRef.current?.duration || 0); }} onEnded={handleEnded} />
 
         {!isElectron && <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden onChange={e => addFromInput(e.target.files)} />}
         <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e => { if (e.target.files[0]) loadLRC(e.target.files[0]); }} />
@@ -515,22 +497,25 @@ export default function App() {
               ))}
             </div>
             <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+              {/* Lyrics */}
               <div style={{ position: "absolute", inset: 0, display: tab === "lyrics" ? "block" : "none" }}>
-                <Lyrics lines={lyrics} audioRef={audioRef} loading={lyricsLoading} />
+                <Lyrics lines={lyrics} mediaRef={activeRef} loading={lyricsLoading} />
               </div>
+              {/* Video */}
               <div style={{ position: "absolute", inset: 0, display: tab === "video" ? "flex" : "none", alignItems: "center", justifyContent: "center", background: "#000" }}>
                 {isVideo
                   ? <video
                       key={track?.url}
                       src={track?.url}
-                      muted
                       style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }}
                       ref={el => {
-                        if (el && audioRef.current) {
-                          el.currentTime = audioRef.current.currentTime;
-                          if (playing) el.play().catch(() => {});
-                        }
+                        // Keep this display video in sync with the hidden videoRef
+                        if (!el) return;
+                        el.currentTime = videoRef.current?.currentTime || 0;
+                        if (playing) el.play().catch(() => {});
                       }}
+                      onPlay={() => { if (videoRef.current) videoRef.current.pause(); }}
+                      muted={false}
                     />
                   : <div style={{ textAlign: "center", color: "rgba(255,255,255,0.13)" }}>
                       <div style={{ fontSize: 44, marginBottom: 12 }}>▷</div>
@@ -556,8 +541,8 @@ export default function App() {
             </span>
           </div>
 
-          <div className="progress-track" onClick={seek} onMouseEnter={() => setProgressHover(true)} onMouseLeave={() => setProgressHover(false)} style={{ marginBottom: 15 }}>
-            <div style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, transition: "width 0.05s linear", position: "relative" }}>
+          <div className="progress-track" onClick={seek} style={{ marginBottom: 15 }}>
+            <div ref={progressFillRef} style={{ height: "100%", background: "#fff", borderRadius: 99, width: `${pct}%`, position: "relative" }}>
               <div className="progress-dot" style={{ position: "absolute", right: -5, top: "50%", transform: "translateY(-50%)", width: 0, height: 0, borderRadius: "50%", background: "#fff", transition: "width 0.2s,height 0.2s", boxShadow: "0 0 8px rgba(255,255,255,0.6)" }} />
             </div>
           </div>
