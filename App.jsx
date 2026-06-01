@@ -287,7 +287,7 @@ export default function App() {
     loadedRef.current = idx;
     const ael = audioRef.current, vel = videoRef.current;
 
-    if (isVideo) {
+    setupAudio(el);
       if (ael) { ael.pause(); ael.src=""; delete ael._ws; }
       if (vel) { vel.src=track.url; vel.volume=vol; vel.load(); if (playingRef.current) vel.play().catch(()=>{}); }
     } else {
