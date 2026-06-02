@@ -21,27 +21,11 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
-      autoplayPolicy: "no-user-gesture-required",
     },
     title: "Wave Player",
     show: false,
   });
   win.setMenuBarVisibility(false);
-  
-  // Allow Web Audio API to work without gesture restriction
-  win.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(true);
-  });
-
-  // Disable autoplay policy so Web Audio API works immediately
-  win.webContents.on("did-finish-load", () => {
-    win.webContents.executeJavaScript(`
-      document.addEventListener('click', () => {
-        if (window._actx && window._actx.state === 'suspended') window._actx.resume();
-      }, { once: true });
-    `);
-  });
-
   win.loadFile(path.join(process.resourcesPath, "dist", "index.html"));
   win.once("ready-to-show", () => win.show());
 }
