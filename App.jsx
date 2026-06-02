@@ -262,14 +262,18 @@ export default function App() {
   }, [isVideo]);
 
   const setupAudio = useCallback((el) => {
-    if (!el || el._ws) return; el._ws = true;
+    if (!el) return;
     if (!actxRef.current) actxRef.current = new (window.AudioContext||window.webkitAudioContext)();
     const ctx = actxRef.current;
     try { srcRef.current?.disconnect(); } catch {}
-    const src = ctx.createMediaElementSource(el);
-    const anl = ctx.createAnalyser(); anl.fftSize = 256;
-    src.connect(anl); anl.connect(ctx.destination);
-    srcRef.current = src; analyserRef.current = anl;
+    if (!el._ws) {
+      el._ws = true;
+      const src = ctx.createMediaElementSource(el);
+      const anl = ctx.createAnalyser(); anl.fftSize = 256;
+      src.connect(anl); anl.connect(ctx.destination);
+      srcRef.current = src; analyserRef.current = anl;
+    }
+    if (ctx.state === "suspended") ctx.resume();
   }, []);
 
   // Load saved folder
@@ -610,3 +614,4 @@ export default function App() {
     </div>
   );
 }
+          
