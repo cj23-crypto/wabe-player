@@ -376,9 +376,9 @@ export default function App() {
 
   const togglePlay = async () => {
     const el = mediaRef.current; if(!el||!track) return;
-    if(!isVideo&&actxRef.current?.state==="suspended") actxRef.current.resume();
+    if(actxRef.current?.state==="suspended") actxRef.current.resume();
     if(playing){el.pause();setPlaying(false);}
-    else{if(!isVideo)setupAudio(el);await el.play();setPlaying(true);}
+    else{setupAudio(el);await el.play();setPlaying(true);}
   };
 
   const seek = async (e) => {
