@@ -281,6 +281,22 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+  // Escucha cambios de dispositivos de audio
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    console.log("Dispositivo de audio cambiado, reconfigurando...");
+    const el = mediaRef.current;
+    if (el) {
+      setupAudio(el); // vuelve a conectar el analyser al nuevo dispositivo
+    }
+  });
+
+  return () => {
+    navigator.mediaDevices.removeEventListener("devicechange", () => {});
+  };
+}, []);
+
+
   // Load saved folder
   useEffect(() => {
     if (!isElectron) return;
