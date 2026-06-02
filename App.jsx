@@ -263,17 +263,22 @@ export default function App() {
 
   const setupAudio = useCallback((el) => {
     if (!el) return;
-    if (!actxRef.current) actxRef.current = new (window.AudioContext||window.webkitAudioContext)();
+    if (!actxRef.current) {
+      actxRef.current = new (window.AudioContext||window.webkitAudioContext)();
+      window._actx = actxRef.current; // expose for Electron to resume
+    }
     const ctx = actxRef.current;
+    if (ctx.state === "suspended") ctx.resume();
     try { srcRef.current?.disconnect(); } catch {}
     if (!el._ws) {
       el._ws = true;
-      const src = ctx.createMediaElementSource(el);
-      const anl = ctx.createAnalyser(); anl.fftSize = 256;
-      src.connect(anl); anl.connect(ctx.destination);
-      srcRef.current = src; analyserRef.current = anl;
+      try {
+        const src = ctx.createMediaElementSource(el);
+        const anl = ctx.createAnalyser(); anl.fftSize = 256;
+        src.connect(anl); anl.connect(ctx.destination);
+        srcRef.current = src; analyserRef.current = anl;
+      } catch(e) { console.warn("setupAudio error:", e); }
     }
-    if (ctx.state === "suspended") ctx.resume();
   }, []);
 
   // Load saved folder
@@ -614,4 +619,3 @@ export default function App() {
     </div>
   );
 }
-          
