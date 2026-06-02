@@ -137,7 +137,7 @@ function Viz({ playing, analyserRef, theme }) {
         ctx.beginPath(); ctx.roundRect(xr, H-bh, bw, bh, 2); ctx.fill();
         const xl = halfW - (i+1)*(bw+1.5);
         ctx.beginPath(); ctx.roundRect(xl, H-bh, bw, bh, 2); ctx.fill();
-        if (playing && i<8 && v>0.35 && Math.random()<0.5)
+        if (playing && i<4 && v>0.6 && Math.random()<0.25)
           spawnParticle(halfW+(Math.random()-0.5)*halfW*0.5, v);
       }
       for (let i = particles.length-1; i>=0; i--) {
