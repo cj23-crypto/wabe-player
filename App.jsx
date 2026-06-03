@@ -378,7 +378,8 @@ export default function App() {
     if (playing) {
       el.pause(); setPlaying(false);
     } else {
-      connectElement(el); // connect to analyser before playing
+      connectElement(el);
+      if (actxRef.current?.state === "suspended") await actxRef.current.resume();
       try { await el.play(); setPlaying(true); } catch(e) { console.warn("play error:", e); }
     }
   };
