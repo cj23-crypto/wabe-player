@@ -245,45 +245,55 @@ export default function App() {
     return () => cancelAnimationFrame(id);
   }, [isVideo]);
 
-  // ─── Web Audio setup ───
-  // Key insight: createMediaElementSource can only be called ONCE per element.
-  // So we create it once per element and reuse the analyser.
-  // When switching between audio/video, we disconnect the old source and connect the new one.
-  const connectElement = useCallback((el) => {
-    if (!el) return;
-    // Create AudioContext once
-    if (!actxRef.current) {
+  // ─── Web Audio ───
+  // AudioContext + Analyser created once, reused forever.
+  // Each media element gets its source node created once (_waveSrc).
+  // On track change we just swap which source feeds the analyser.
+  const getCtx = useCallback(() => {
+    if (!actxRef.current)
       actxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const ctx = actxRef.current;
-    if (ctx.state === "suspended") ctx.resume();
+    return actxRef.current;
+  }, []);
 
-    // Create analyser once
+  const getAnalyser = useCallback(() => {
     if (!analyserRef.current) {
+      const ctx = getCtx();
       analyserRef.current = ctx.createAnalyser();
       analyserRef.current.fftSize = 256;
       analyserRef.current.connect(ctx.destination);
     }
+    return analyserRef.current;
+  }, [getCtx]);
 
-    // Create source for this element once, then just reconnect
+  const connectElement = useCallback((el) => {
+    if (!el) return;
+    const ctx = getCtx();
+    const anl = getAnalyser();
+    // Resume context — this is a user-gesture context so it should work
+    if (ctx.state === "suspended") ctx.resume();
+    // Create source node once per element
     if (!el._waveSrc) {
-      try {
-        el._waveSrc = ctx.createMediaElementSource(el);
-      } catch(e) {
-        console.warn("createMediaElementSource failed:", e);
-        return;
-      }
+      try { el._waveSrc = ctx.createMediaElementSource(el); }
+      catch(e) { return; }
     }
+    // Swap source: disconnect old, connect new
+    if (window._waveLastSrc && window._waveLastSrc !== el._waveSrc) {
+      try { window._waveLastSrc.disconnect(anl); } catch {}
+    }
+    if (window._waveLastSrc !== el._waveSrc) {
+      try { el._waveSrc.connect(anl); } catch {}
+      window._waveLastSrc = el._waveSrc;
+    }
+  }, [getCtx, getAnalyser]);
 
-    // Disconnect previous source from analyser
-    if (el._waveSrc !== window._lastSrc) {
-      if (window._lastSrc) {
-        try { window._lastSrc.disconnect(analyserRef.current); } catch {}
-      }
-      try { el._waveSrc.connect(analyserRef.current); } catch {}
-      window._lastSrc = el._waveSrc;
-    }
-  }, []);
+  // Core play function — always connects then plays
+  const playEl = useCallback(async (el) => {
+    if (!el) return;
+    connectElement(el);
+    const ctx = getCtx();
+    if (ctx.state === "suspended") await ctx.resume();
+    try { await el.play(); } catch(e) { console.warn("play failed:", e); }
+  }, [connectElement, getCtx]);
 
   // Load saved folder
   useEffect(() => {
@@ -294,32 +304,25 @@ export default function App() {
     }).catch(()=>{});
   }, []);
 
-  // Load track
+  // Load track — fires on every idx/playlist change
   useEffect(() => {
     if (!track || loadedRef.current===idx) return;
     loadedRef.current = idx;
     const ael = audioRef.current, vel = videoRef.current;
-
-    const startEl = (el) => {
-      // Remove old listeners
-      el.oncanplay = null;
-      const handler = async () => {
-        el.removeEventListener("canplay", handler);
-        connectElement(el);
-        if (actxRef.current?.state === "suspended") await actxRef.current.resume();
-        if (playingRef.current) el.play().catch(()=>{});
-      };
-      el.addEventListener("canplay", handler);
-    };
-
+    // Stop whichever element isn't needed
     if (isVideo) {
       if (ael) { ael.pause(); ael.src=""; }
-      if (vel) { vel.src=track.url; vel.volume=vol; vel.load(); startEl(vel); }
+      if (vel) {
+        vel.src = track.url; vel.volume = vol; vel.load();
+        if (playingRef.current) playEl(vel);
+      }
     } else {
       if (vel) { vel.pause(); vel.src=""; }
-      if (ael) { ael.src=track.url; ael.volume=vol; ael.load(); startEl(ael); }
+      if (ael) {
+        ael.src = track.url; ael.volume = vol; ael.load();
+        if (playingRef.current) playEl(ael);
+      }
     }
-
     setCt(0); setDur(0);
     setLyrics([]); setLL(true);
     fetchLyrics(track.name).then(lines => { setLyrics(lines||[]); setLL(false); });
@@ -380,21 +383,35 @@ export default function App() {
   const loadLRC = (file) => { const fr=new FileReader(); fr.onload=e=>{setLyrics(parseLRC(e.target.result));setLL(false);}; fr.readAsText(file); };
 
   const handleEnded = useCallback(() => {
-    setIdx(prev=>{if(prev+1<playlist.length){loadedRef.current=-1;setPlaying(true);return prev+1;}setPlaying(false);return prev;});
-  },[playlist.length]);
+    setIdx(prev => {
+      if (prev + 1 < playlist.length) {
+        loadedRef.current = -1;
+        setPlaying(true);
+        return prev + 1;
+      }
+      setPlaying(false);
+      return prev;
+    });
+  }, [playlist.length]);
 
   const go = useCallback((dir) => {
-    setIdx(prev=>{const n=prev+dir;if(n>=0&&n<playlist.length){loadedRef.current=-1;setPlaying(true);return n;}return prev;});
-  },[playlist.length]);
+    setIdx(prev => {
+      const n = prev + dir;
+      if (n >= 0 && n < playlist.length) {
+        loadedRef.current = -1;
+        setPlaying(true);
+        return n;
+      }
+      return prev;
+    });
+  }, [playlist.length]);
 
   const togglePlay = async () => {
     const el = mediaRef.current; if(!el||!track) return;
     if (playing) {
       el.pause(); setPlaying(false);
     } else {
-      connectElement(el);
-      if (actxRef.current?.state === "suspended") await actxRef.current.resume();
-      try { await el.play(); setPlaying(true); } catch(e) { console.warn("play error:", e); }
+      await playEl(el); setPlaying(true);
     }
   };
 
