@@ -39,49 +39,34 @@ const THEME_KEY  = "wave_theme";
 /* ─── Themes ─── */
 const THEMES = {
   wave: {
-    name: "Wave",
-    icon: "◈",
+    name: "Wave", icon: "◈",
     bg: ["#0a0a0f","#0a0f0a","#0f0a0a","#0a0d12","#0e0a10","#0f0e08"],
     aurora: [["#3b1f6e","#1a3a5c","#1a4a3a"],["#1a4a3a","#2d1f5e","#1a2a4a"],["#4a1a2a","#1a3a5c","#2d1f5e"],["#1a2a4a","#1a4a2a","#3b1f6e"],["#2d1a4e","#1a4a3a","#4a2a1a"],["#1a3a1a","#3b2a1a","#1a2a5c"]],
-    accent: "#ffffff",
-    vizColor: (v) => `rgba(255,255,255,${0.08 + v * 0.7})`,
-    activeLine: "#fff",
+    accent: "#ffffff", vizColor: (v) => `rgba(255,255,255,${0.08 + v * 0.7})`,
   },
   cyber: {
-    name: "Cyberpunk",
-    icon: "⬡",
+    name: "Cyberpunk", icon: "⬡",
     bg: ["#000000","#000000","#000000","#000000","#000000","#000000"],
     aurora: [["#ff00aa","#00ffff","#7700ff"],["#00ffff","#ff00aa","#7700ff"],["#7700ff","#00ffff","#ff00aa"],["#ff00aa","#7700ff","#00ffff"],["#00ffff","#7700ff","#ff00aa"],["#7700ff","#ff00aa","#00ffff"]],
-    accent: "#ff00cc",
-    vizColor: (v) => `rgba(${v > 0.5 ? "0,255,255" : "255,0,204"},${0.08 + v * 0.85})`,
-    activeLine: "#00ffff",
+    accent: "#ff00cc", vizColor: (v) => `rgba(${v > 0.5 ? "0,255,255" : "255,0,204"},${0.08 + v * 0.85})`,
   },
   amber: {
-    name: "Retro Amber",
-    icon: "◉",
+    name: "Retro Amber", icon: "◉",
     bg: ["#100c06","#100c06","#100c06","#100c06","#100c06","#100c06"],
     aurora: [["#3a1a00","#2a1500","#1a0a00"],["#2a1500","#3a1a00","#1a0a00"],["#1a0a00","#3a1a00","#2a1500"],["#3a1a00","#1a0a00","#2a1500"],["#2a1500","#1a0a00","#3a1a00"],["#1a0a00","#2a1500","#3a1a00"]],
-    accent: "#e8820a",
-    vizColor: (v) => `rgba(232,130,10,${0.08 + v * 0.85})`,
-    activeLine: "#f5a623",
+    accent: "#e8820a", vizColor: (v) => `rgba(232,130,10,${0.08 + v * 0.85})`,
   },
   nordic: {
-    name: "Nordic",
-    icon: "◇",
+    name: "Nordic", icon: "◇",
     bg: ["#0f1318","#0f1318","#0f1318","#0f1318","#0f1318","#0f1318"],
     aurora: [["#0d2818","#102030","#0a1f28"],["#102030","#0d2818","#0a1f28"],["#0a1f28","#0d2818","#102030"],["#0d2818","#0a1f28","#102030"],["#102030","#0a1f28","#0d2818"],["#0a1f28","#102030","#0d2818"]],
-    accent: "#5ec994",
-    vizColor: (v) => `rgba(94,201,148,${0.08 + v * 0.85})`,
-    activeLine: "#5ec994",
+    accent: "#5ec994", vizColor: (v) => `rgba(94,201,148,${0.08 + v * 0.85})`,
   },
   stealth: {
-    name: "Stealth",
-    icon: "▪",
+    name: "Stealth", icon: "▪",
     bg: ["#000000","#000000","#000000","#000000","#000000","#000000"],
     aurora: [["#111111","#0a0a0a","#080808"],["#0a0a0a","#111111","#080808"],["#080808","#111111","#0a0a0a"],["#111111","#080808","#0a0a0a"],["#0a0a0a","#080808","#111111"],["#080808","#0a0a0a","#111111"]],
-    accent: "#ffffff",
-    vizColor: (v) => `rgba(255,255,255,${0.04 + v * 0.5})`,
-    activeLine: "#ffffff",
+    accent: "#ffffff", vizColor: (v) => `rgba(255,255,255,${0.04 + v * 0.5})`,
   },
 };
 
@@ -127,7 +112,9 @@ function Viz({ playing, analyserRef, theme }) {
       ctx.clearRect(0, 0, W, H);
       const anl = analyserRef?.current;
       let fd = null;
-      if (anl && playing) { fd = new Uint8Array(anl.frequencyBinCount); anl.getByteFrequencyData(fd); }
+      if (anl && playing) {
+        try { fd = new Uint8Array(anl.frequencyBinCount); anl.getByteFrequencyData(fd); } catch {}
+      }
       const halfW = W/2, barCount = 48;
       for (let i = 0; i < barCount; i++) {
         const v = fd ? (fd[Math.floor(i*fd.length/barCount/2)]/255) : (playing ? 0.08+Math.random()*0.12 : 0.03);
@@ -154,7 +141,7 @@ function Viz({ playing, analyserRef, theme }) {
   return <canvas ref={cvRef} width={900} height={80} style={{ width:"100%", height:80, display:"block" }} />;
 }
 
-/* ─── Lyrics overlay ─── */
+/* ─── Lyrics ─── */
 function LyricsOverlay({ lines, mediaRef, loading, accent }) {
   const [ct, setCt] = useState(0);
   const wrapRef = useRef();
@@ -195,7 +182,7 @@ function WelcomeModal({ onOpenFolder, onSkip, accent }) {
         <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"1.25rem", color:"#fff", marginBottom:10 }}>Bienvenido a Wave</h2>
         <p style={{ fontFamily:"'Syne',sans-serif", fontSize:"0.82rem", color:"rgba(255,255,255,0.4)", marginBottom:28, lineHeight:1.6 }}>¿Cargar una carpeta con tu música?</p>
         <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
-          <button onClick={onOpenFolder} style={{ background:accent, border:"none", borderRadius:10, padding:"11px 24px", fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:"0.8rem", cursor:"pointer", color: accent === "#ffffff" ? "#111" : "#000", transition:"opacity 0.15s" }}
+          <button onClick={onOpenFolder} style={{ background:accent, border:"none", borderRadius:10, padding:"11px 24px", fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:"0.8rem", cursor:"pointer", color: accent==="#ffffff"?"#111":"#000", transition:"opacity 0.15s" }}
             onMouseEnter={e=>e.currentTarget.style.opacity="0.85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}
           >Abrir carpeta</button>
           <button onClick={onSkip} style={{ background:"none", border:"1px solid rgba(255,255,255,0.14)", borderRadius:10, padding:"11px 24px", fontFamily:"'Syne',sans-serif", fontWeight:600, fontSize:"0.8rem", color:"rgba(255,255,255,0.45)", cursor:"pointer", transition:"border-color 0.2s,color 0.2s" }}
@@ -209,43 +196,40 @@ function WelcomeModal({ onOpenFolder, onSkip, accent }) {
 
 /* ─── App ─── */
 export default function App() {
-  const [playlist, setPlaylist]     = useState([]);
-  const [idx, setIdx]               = useState(0);
-  const [playing, setPlaying]       = useState(false);
-  const [dur, setDur]               = useState(0);
-  const [ct, setCt]                 = useState(0);
-  const [vol, setVol]               = useState(0.85);
-  const [tab, setTab]               = useState("lyrics");
-  const [lyrics, setLyrics]         = useState([]);
-  const [lyricsLoading, setLL]      = useState(false);
-  const [sidebarOpen, setSidebar]   = useState(true);
-  const [videoLyrics, setVL]        = useState(false); // lyrics overlay on video
-  const [themeKey, setThemeKey]     = useState(() => localStorage.getItem(THEME_KEY) || "wave");
-  const [showWelcome, setWelcome]   = useState(() => isElectron && !localStorage.getItem(FOLDER_KEY));
+  const [playlist, setPlaylist]   = useState([]);
+  const [idx, setIdx]             = useState(0);
+  const [playing, setPlaying]     = useState(false);
+  const [dur, setDur]             = useState(0);
+  const [ct, setCt]               = useState(0);
+  const [vol, setVol]             = useState(0.85);
+  const [tab, setTab]             = useState("lyrics");
+  const [lyrics, setLyrics]       = useState([]);
+  const [lyricsLoading, setLL]    = useState(false);
+  const [sidebarOpen, setSidebar] = useState(true);
+  const [videoLyrics, setVL]      = useState(false);
+  const [themeKey, setThemeKey]   = useState(() => localStorage.getItem(THEME_KEY) || "wave");
+  const [showWelcome, setWelcome] = useState(() => isElectron && !localStorage.getItem(FOLDER_KEY));
 
-  const audioRef       = useRef(); // audio-only tracks
-  const videoRef       = useRef(); // video tracks — one single element, always mounted
-  const analyserRef    = useRef();
-  const actxRef        = useRef();
-  const srcRef         = useRef();
-  const progressRef    = useRef();
-  const fileIn         = useRef();
-  const lrcIn          = useRef();
-  const footerRef      = useRef();
-  const playingRef     = useRef(false);
-  const loadedRef      = useRef(-1);
+  const audioRef    = useRef();
+  const videoRef    = useRef();
+  const analyserRef = useRef();
+  const actxRef     = useRef();
+  const progressRef = useRef();
+  const fileIn      = useRef();
+  const lrcIn       = useRef();
+  const footerRef   = useRef();
+  const playingRef  = useRef(false);
+  const loadedRef   = useRef(-1);
 
-  const theme   = THEMES[themeKey] || THEMES.wave;
-  const track   = playlist[idx] || null;
-  const isVideo = track?.type === "video";
+  const theme    = THEMES[themeKey] || THEMES.wave;
+  const track    = playlist[idx] || null;
+  const isVideo  = track?.type === "video";
   const mediaRef = isVideo ? videoRef : audioRef;
 
   useEffect(() => { playingRef.current = playing; }, [playing]);
-
-  // Theme persist
   useEffect(() => { localStorage.setItem(THEME_KEY, themeKey); }, [themeKey]);
 
-  // Progress bar — direct DOM
+  // Progress bar — direct DOM, no re-render
   useEffect(() => {
     let id;
     const tick = () => {
@@ -261,27 +245,45 @@ export default function App() {
     return () => cancelAnimationFrame(id);
   }, [isVideo]);
 
-  const setupAudio = useCallback((el) => {
+  // ─── Web Audio setup ───
+  // Key insight: createMediaElementSource can only be called ONCE per element.
+  // So we create it once per element and reuse the analyser.
+  // When switching between audio/video, we disconnect the old source and connect the new one.
+  const connectElement = useCallback((el) => {
     if (!el) return;
+    // Create AudioContext once
     if (!actxRef.current) {
-      actxRef.current = new (window.AudioContext||window.webkitAudioContext)();
-      window._actx = actxRef.current; // expose for Electron to resume
+      actxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
     const ctx = actxRef.current;
     if (ctx.state === "suspended") ctx.resume();
-    try { srcRef.current?.disconnect(); } catch {}
-    if (!el._ws) {
-      el._ws = true;
+
+    // Create analyser once
+    if (!analyserRef.current) {
+      analyserRef.current = ctx.createAnalyser();
+      analyserRef.current.fftSize = 256;
+      analyserRef.current.connect(ctx.destination);
+    }
+
+    // Create source for this element once, then just reconnect
+    if (!el._waveSrc) {
       try {
-        const src = ctx.createMediaElementSource(el);
-        const anl = ctx.createAnalyser(); anl.fftSize = 256;
-        src.connect(anl); anl.connect(ctx.destination);
-        srcRef.current = src; analyserRef.current = anl;
-      } catch(e) { console.warn("setupAudio error:", e); }
+        el._waveSrc = ctx.createMediaElementSource(el);
+      } catch(e) {
+        console.warn("createMediaElementSource failed:", e);
+        return;
+      }
+    }
+
+    // Disconnect previous source from analyser
+    if (el._waveSrc !== window._lastSrc) {
+      if (window._lastSrc) {
+        try { window._lastSrc.disconnect(analyserRef.current); } catch {}
+      }
+      try { el._waveSrc.connect(analyserRef.current); } catch {}
+      window._lastSrc = el._waveSrc;
     }
   }, []);
-
-  
 
   // Load saved folder
   useEffect(() => {
@@ -292,26 +294,27 @@ export default function App() {
     }).catch(()=>{});
   }, []);
 
-  // Load track — route to correct element, stop the other
+  // Load track
   useEffect(() => {
     if (!track || loadedRef.current===idx) return;
     loadedRef.current = idx;
     const ael = audioRef.current, vel = videoRef.current;
-
     if (isVideo) {
-      if (ael) { ael.pause(); ael.src=""; delete ael._ws; }
+      if (ael) { ael.pause(); ael.src=""; }
       if (vel) { vel.src=track.url; vel.volume=vol; vel.load(); if (playingRef.current) vel.play().catch(()=>{}); }
     } else {
       if (vel) { vel.pause(); vel.src=""; }
       if (ael) { ael.src=track.url; ael.volume=vol; ael.load(); if (playingRef.current) ael.play().catch(()=>{}); }
     }
-
     setCt(0); setDur(0);
     setLyrics([]); setLL(true);
     fetchLyrics(track.name).then(lines => { setLyrics(lines||[]); setLL(false); });
   }, [idx, playlist, isVideo]);
 
-  useEffect(() => { if (audioRef.current) audioRef.current.volume=vol; if (videoRef.current) videoRef.current.volume=vol; }, [vol]);
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = vol;
+    if (videoRef.current) videoRef.current.volume = vol;
+  }, [vol]);
 
   // Scroll = volume
   useEffect(() => {
@@ -320,30 +323,15 @@ export default function App() {
     el.addEventListener("wheel",fn,{passive:false}); return ()=>el.removeEventListener("wheel",fn);
   }, []);
 
-  // Move the single video element into the video slot — no decode duplication
+  // Move video element into slot
   useEffect(() => {
-    const vel = videoRef.current;
-    if (!vel) return;
+    const vel = videoRef.current; if (!vel) return;
     const slot = document.getElementById("video-slot");
-    if (slot && isVideo) {
-      vel.style.position = "absolute";
-      vel.style.inset = "0";
-      vel.style.width = "100%";
-      vel.style.height = "100%";
-      vel.style.objectFit = "cover";
-      vel.style.opacity = "1";
-      vel.style.pointerEvents = "none";
-      vel.style.zIndex = "1";
+    if (slot && isVideo && tab==="video") {
+      vel.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:1;pointer-events:none;z-index:1;";
       slot.prepend(vel);
     } else {
-      // Move back to body hidden when not video
-      vel.style.position = "fixed";
-      vel.style.width = "1px";
-      vel.style.height = "1px";
-      vel.style.opacity = "0";
-      vel.style.top = "0";
-      vel.style.left = "0";
-      vel.style.zIndex = "-1";
+      vel.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;top:0;left:0;z-index:-1;pointer-events:none;";
       document.body.appendChild(vel);
     }
   }, [isVideo, tab]);
@@ -387,9 +375,12 @@ export default function App() {
 
   const togglePlay = async () => {
     const el = mediaRef.current; if(!el||!track) return;
-    if(actxRef.current?.state==="suspended") actxRef.current.resume();
-    if(playing){el.pause();setPlaying(false);}
-    else{setupAudio(el);await el.play();setPlaying(true);}
+    if (playing) {
+      el.pause(); setPlaying(false);
+    } else {
+      connectElement(el); // connect to analyser before playing
+      try { await el.play(); setPlaying(true); } catch(e) { console.warn("play error:", e); }
+    }
   };
 
   const seek = async (e) => {
@@ -397,14 +388,14 @@ export default function App() {
     const rect=e.currentTarget.getBoundingClientRect();
     const v=Math.max(0,Math.min(((e.clientX-rect.left)/rect.width)*dur,dur));
     const was=playingRef.current;
-    el.pause(); el.currentTime=v; setCt(v);
-    if(was){try{await el.play();}catch{}}
+    el.currentTime=v; setCt(v); // no pause/resume — avoids audio stutter
+    if (!was) el.pause();
   };
 
-  const pct = dur ? (ct/dur)*100 : 0;
+  const pct   = dur ? (ct/dur)*100 : 0;
   const bgColor = theme.bg[idx%6];
-  const auroraC  = theme.aurora[idx%6];
-  const accent   = theme.accent;
+  const auroraC = theme.aurora[idx%6];
+  const accent  = theme.accent;
 
   return (
     <div style={{ height:"100dvh", background:bgColor, display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
@@ -463,16 +454,9 @@ export default function App() {
 
       <div style={{ position:"relative", zIndex:1, display:"flex", flexDirection:"column", height:"100%" }}>
 
-        {/* Audio element — only for audio tracks */}
         <audio ref={audioRef} onDurationChange={()=>{if(!isVideo)setDur(audioRef.current?.duration||0);}} onEnded={handleEnded} />
-
-        {/* Single video element — hidden, audio source only. Display happens in tab via src mirror */}
-        <video
-          ref={videoRef}
-          onDurationChange={()=>{if(isVideo)setDur(videoRef.current?.duration||0);}}
-          onEnded={handleEnded}
-          style={{ position:"fixed", width:1, height:1, opacity:0, top:0, left:0, pointerEvents:"none" }}
-        />
+        <video ref={videoRef} onDurationChange={()=>{if(isVideo)setDur(videoRef.current?.duration||0);}} onEnded={handleEnded}
+          style={{ position:"fixed", width:1, height:1, opacity:0, top:0, left:0, pointerEvents:"none" }} />
 
         {!isElectron && <input ref={fileIn} type="file" accept="audio/*,video/*" multiple hidden onChange={e=>addFromInput(e.target.files)} />}
         <input ref={lrcIn} type="file" accept=".lrc" hidden onChange={e=>{if(e.target.files[0])loadLRC(e.target.files[0]);}} />
@@ -485,14 +469,11 @@ export default function App() {
             >{sidebarOpen?"◧":"▣"}</button>
             <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:"0.72rem", letterSpacing:"0.22em", color:"rgba(255,255,255,0.35)", textTransform:"uppercase" }}>WAVE</span>
           </div>
-
-          {/* Theme buttons */}
           <div style={{ display:"flex", gap:5, WebkitAppRegion:"no-drag" }}>
             {Object.entries(THEMES).map(([k,t])=>(
               <button key={k} className={`theme-btn${themeKey===k?" active":""}`} onClick={()=>setThemeKey(k)} title={t.name}>{t.icon}</button>
             ))}
           </div>
-
           <div style={{ display:"flex", gap:6, WebkitAppRegion:"no-drag" }}>
             {isElectron && <button className="btn-ghost" onClick={openFolder}>📁</button>}
             <button className="btn-ghost" onClick={openFiles}>+ Música</button>
@@ -501,7 +482,6 @@ export default function App() {
         </header>
 
         <div className="shell">
-          {/* Sidebar */}
           <aside className={`sidebar${sidebarOpen?"":" closed"}`}>
             <div style={{ padding:"13px 14px 7px", flexShrink:0 }}>
               <span style={{ fontFamily:"'Azeret Mono',monospace", fontSize:"0.6rem", color:"rgba(255,255,255,0.25)", letterSpacing:"0.14em" }}>LISTA — {playlist.length}</span>
@@ -532,24 +512,18 @@ export default function App() {
             ))}
           </aside>
 
-          {/* Main content */}
           <div className="main">
             <div style={{ display:"flex", borderBottom:"1px solid rgba(255,255,255,0.06)", flexShrink:0 }}>
               {[["lyrics","LETRA"],["video","VIDEO"]].map(([k,l])=>(
                 <button key={k} className={`tab-btn${tab===k?" active":""}`} onClick={()=>setTab(k)}
-                  style={{ color: tab===k ? accent : "rgba(255,255,255,0.25)", borderBottomColor: tab===k ? accent : "transparent" }}
+                  style={{ color:tab===k?accent:"rgba(255,255,255,0.25)", borderBottomColor:tab===k?accent:"transparent" }}
                 >{l}</button>
               ))}
             </div>
-
             <div style={{ flex:1, overflow:"hidden", position:"relative" }}>
-
-              {/* LYRICS TAB */}
               <div style={{ position:"absolute", inset:0, display:tab==="lyrics"?"block":"none" }}>
                 <LyricsOverlay lines={lyrics} mediaRef={mediaRef} loading={lyricsLoading} accent={accent} />
               </div>
-
-              {/* VIDEO TAB — videoRef is moved here via useEffect */}
               <div id="video-slot" style={{ position:"absolute", inset:0, display:tab==="video"?"block":"none", background:"#000", overflow:"hidden" }}>
                 {!isVideo && (
                   <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -559,16 +533,14 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                {/* Lyrics overlay on video */}
-                {isVideo && videoLyrics && (
+                {isVideo&&videoLyrics&&(
                   <div style={{ position:"absolute", inset:0, zIndex:10, background:"linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 55%, transparent 100%)", pointerEvents:"none" }}>
                     <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"65%" }}>
                       <LyricsOverlay lines={lyrics} mediaRef={mediaRef} loading={lyricsLoading} accent={accent} />
                     </div>
                   </div>
                 )}
-                {/* Lyrics toggle button */}
-                {isVideo && (
+                {isVideo&&(
                   <div style={{ position:"absolute", bottom:14, right:14, zIndex:20 }}>
                     <button className={`vbtn${videoLyrics?" on":""}`} onClick={()=>setVL(v=>!v)}>
                       {videoLyrics?"✕ Letra":"♪ Letra"}
@@ -580,12 +552,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Visualizer */}
         <div style={{ background:"rgba(0,0,0,0.2)", borderTop:"1px solid rgba(255,255,255,0.05)", flexShrink:0 }}>
           <Viz playing={playing} analyserRef={analyserRef} theme={theme} />
         </div>
 
-        {/* Controls */}
         <footer ref={footerRef} style={{ padding:"13px 20px 18px", borderTop:"1px solid rgba(255,255,255,0.06)", flexShrink:0, backdropFilter:"blur(12px)" }}>
           <div style={{ marginBottom:10, display:"flex", alignItems:"baseline", gap:10 }}>
             <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:"clamp(0.9rem,2.5vw,1.1rem)", color:"#fff", flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
@@ -595,24 +565,22 @@ export default function App() {
               {fmt(ct)} / {fmt(dur)}
             </span>
           </div>
-
           <div className="progress-track" onClick={seek} style={{ marginBottom:15 }}>
             <div ref={progressRef} style={{ height:"100%", background:accent, borderRadius:99, width:`${pct}%`, position:"relative" }}>
               <div className="pdot" style={{ position:"absolute", right:-5, top:"50%", transform:"translateY(-50%)", width:0, height:0, borderRadius:"50%", background:accent, transition:"width 0.2s,height 0.2s", boxShadow:`0 0 8px ${accent}99` }} />
             </div>
           </div>
-
           <div style={{ display:"flex", alignItems:"center" }}>
             <div style={{ display:"flex", alignItems:"center", gap:7, flex:1 }}>
               <span style={{ fontSize:"0.7rem", opacity:0.35 }}>{vol===0?"🔇":vol<0.5?"🔉":"🔊"}</span>
               <input type="range" min={0} max={1} step={0.01} value={vol} onChange={e=>setVol(+e.target.value)} style={{ maxWidth:80, accentColor:accent }} />
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <button className="ctrl-btn" onClick={()=>go(-1)} style={{ color:"rgba(255,255,255,0.38)" }}><IconPrev /></button>
+              <button className="ctrl-btn" onClick={()=>go(-1)}><IconPrev /></button>
               <button className="play-btn" onClick={togglePlay} style={{ background:accent }}>
                 {playing ? <IconPause color={bgColor||"#111"} /> : <IconPlay color={bgColor||"#111"} />}
               </button>
-              <button className="ctrl-btn" onClick={()=>go(1)} style={{ color:"rgba(255,255,255,0.38)" }}><IconNext /></button>
+              <button className="ctrl-btn" onClick={()=>go(1)}><IconNext /></button>
             </div>
             <div style={{ flex:1 }} />
           </div>
