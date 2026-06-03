@@ -299,13 +299,27 @@ export default function App() {
     if (!track || loadedRef.current===idx) return;
     loadedRef.current = idx;
     const ael = audioRef.current, vel = videoRef.current;
+
+    const startEl = (el) => {
+      // Remove old listeners
+      el.oncanplay = null;
+      const handler = async () => {
+        el.removeEventListener("canplay", handler);
+        connectElement(el);
+        if (actxRef.current?.state === "suspended") await actxRef.current.resume();
+        if (playingRef.current) el.play().catch(()=>{});
+      };
+      el.addEventListener("canplay", handler);
+    };
+
     if (isVideo) {
       if (ael) { ael.pause(); ael.src=""; }
-      if (vel) { vel.src=track.url; vel.volume=vol; vel.load(); if (playingRef.current) vel.play().catch(()=>{}); }
+      if (vel) { vel.src=track.url; vel.volume=vol; vel.load(); startEl(vel); }
     } else {
       if (vel) { vel.pause(); vel.src=""; }
-      if (ael) { ael.src=track.url; ael.volume=vol; ael.load(); if (playingRef.current) ael.play().catch(()=>{}); }
+      if (ael) { ael.src=track.url; ael.volume=vol; ael.load(); startEl(ael); }
     }
+
     setCt(0); setDur(0);
     setLyrics([]); setLL(true);
     fetchLyrics(track.name).then(lines => { setLyrics(lines||[]); setLL(false); });
